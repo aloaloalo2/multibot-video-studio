@@ -40,5 +40,33 @@ class AutoDueTest(unittest.TestCase):
         self.assertTrue(auto_pipeline.WAKE.is_set())
 
 
+class TickTest(unittest.TestCase):
+    """A round reads the episodes through the list's cache and loads a whole project only to export it."""
+
+    def test_only_the_episode_to_export_is_loaded(self):
+        import json
+        root = Path(tempfile.mkdtemp())
+        for pid, finished in (("a", 200.0), ("b", 50.0)):
+            (root / "projects" / pid).mkdir(parents=True)
+            (root / "projects" / pid / "project.json").write_text(json.dumps(
+                {"id": pid, "channel_id": "c", "name": pid, "production_request": {"id": "r" + pid, "status": "done", "finished_at": finished}}))
+        started, loaded = [], []
+        with patch.object(store, "DATA_ROOT", root), patch.object(store, "PROJECTS_ROOT", root / "projects"), \
+             patch.object(store, "project_dir", side_effect=lambda pid: root / "projects" / pid), \
+             patch.object(store, "list_channels", return_value=[{"id": "c"}]), \
+             patch.object(store, "get_channel_folder", return_value=root), \
+             patch.object(store, "read_channel_settings", return_value={"auto_export": True}), \
+             patch.object(store, "upgrade_legacy_project", side_effect=lambda data: data), \
+             patch.object(store, "load_project", side_effect=lambda pid: loaded.append(pid) or {"id": pid, "production_request": {"id": "r" + pid}}), \
+             patch.object(store, "plan_readiness", return_value={"export_ready": True}), \
+             patch.object(auto_pipeline, "_busy", return_value=False), \
+             patch.object(auto_pipeline.time, "time", return_value=100.0):
+            store.atomic_json(root / auto_pipeline.STATE, {"c": {"auto_export": 100.0}})
+            done = auto_pipeline.tick(lambda project, confirmed, bitrate: started.append(project["id"]), lambda pid: None)
+        self.assertEqual(done, ["export a"])
+        self.assertEqual(loaded, ["a"])
+        self.assertEqual(started, ["a"])
+
+
 if __name__ == '__main__':
     unittest.main()
