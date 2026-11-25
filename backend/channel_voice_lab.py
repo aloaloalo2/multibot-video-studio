@@ -513,12 +513,7 @@ def fish_synthesis(secret, voice, settings, raw_key=None):
             pending=target.with_suffix('.pending.mp3');pending.write_bytes(audio)
             if not (store.media_duration(pending) or 0)>0:raise RuntimeError('Fish повернув неповний звук')
             pending.replace(target)
-    speed=settings.get('speed',1.)
-    if speed==1.:return target.read_bytes()
-    with tempfile.TemporaryDirectory() as tmp:
-        output=Path(tmp)/'paced.mp3'
-        languages.run(['ffmpeg','-v','error','-nostdin','-y','-i',str(target),'-af',f'atempo={speed:.6f}','-b:a','128k',str(output)],'змінити темп без зміни тону')
-        return output.read_bytes()
+    return paced_audio(target,settings.get('speed',1.))
 
 
 def run(cid, settings, ref, job):

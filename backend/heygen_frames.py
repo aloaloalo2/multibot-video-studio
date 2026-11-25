@@ -524,6 +524,14 @@ def _ready(job):
     temporary = output.with_suffix('.part')
     with urllib.request.urlopen(url, timeout=120) as response, temporary.open('wb') as target:
         shutil.copyfileobj(response, target)
+        headers = getattr(response, 'headers', None)
+        expected = headers.get('Content-Length') if headers is not None else None
+        size = target.tell()
+    # a broken connection can end the body early without an error, and a moov atom at the start still reads as a whole
+    # video: a short file would be cut into frames and kept for good, so the paid video is downloaded again next round
+    if expected and str(expected).isdigit() and size != int(expected):
+        temporary.unlink(missing_ok=True)
+        raise heygen_voice.Lost(f'{size} of {expected} bytes')
     if not store.media_duration(temporary):
         temporary.unlink(missing_ok=True)
         raise store.StudioError('Не вдалося прочитати готове відео HeyGen.')
