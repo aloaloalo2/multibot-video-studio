@@ -16,6 +16,28 @@ import frame_review as review
 import review_dependencies as deps
 from review_dependencies import fingerprints
 
+# The static parser (node + Playwright's Babel bundle) takes about two seconds a run, and a test asks fingerprints for the
+# same scene files many times. Its answer depends only on its input, so identical inputs are parsed once; a test that
+# patches run_parser itself replaces this wrapper for its own block.
+_PARSED = {}
+_run_parser = deps.run_parser
+
+
+def _cached_parser(command, *, input=None, **options):
+    key = (tuple(command), input)
+    if key not in _PARSED:
+        _PARSED[key] = _run_parser(command, input=input, **options)
+    return _PARSED[key]
+
+
+def setUpModule():
+    deps.run_parser = _cached_parser
+
+
+def tearDownModule():
+    deps.run_parser = _run_parser
+    _PARSED.clear()
+
 
 class ReviewTest(unittest.TestCase):
     def setUp(self):
