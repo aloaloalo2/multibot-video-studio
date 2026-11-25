@@ -119,7 +119,7 @@ def brief(project: dict) -> str:
         text += ("\nМоушн-графіка над ведучим увімкнена. " + motion_direction.HOST_GRAPHICS +
                  "\nУ задумі кожного кадру host коротко запиши, яку графіку показати й на якому слові, або що кадр лишається чистим.\n")
     import animation_preferences
-    return text + montage_context.rules(project) + montage_context.COMMANDS + animation_preferences.instructions(project, planning=True) + sound_brief(project, include_workflow=not is_animated) + animation_style(project) + channel_memory(project)
+    return text + montage_context.rules(project, planning=True) + montage_context.COMMANDS + animation_preferences.instructions(project, planning=True) + sound_brief(project, include_workflow=not is_animated) + animation_style(project) + channel_memory(project)
 
 
 def sound_brief(project: dict, *, scoped=False, include_workflow=True) -> str:
@@ -151,7 +151,8 @@ def channel_memory(project: dict) -> str:
     # agent work by the same notes a Claude Code session in the YOUTUBE folder does (user, 8 November 2026)
     try:
         import author_rules
-        notes = author_rules.claude_memory(store.get_channel_folder(project["channel_id"], include_disabled=True).name, limit=20000, montage_only=True)
+        name = store.get_channel_folder(project["channel_id"], include_disabled=True).name
+        notes = frame_notes(author_rules.claude_memory(name, limit=10 ** 7, montage_only=True), name)
     except (store.StudioError, KeyError, OSError):
         notes = ""
     text = ""
@@ -168,6 +169,39 @@ def channel_memory(project: dict) -> str:
                      + ". Поля shared_rules та director_notes містять збережені побажання до монтажу. "
                      "Враховуй їх разом із поточними налаштуваннями й пам’яттю каналу.\n")
     return text
+
+
+# Notes that govern other stages (publishing, descriptions, the script's words, the chat's own settings and caches) or
+# were replaced (numbers stay in words after Whisper since 18 November 2026): the frame agents and the director only
+# reread them. Their rules still hold where they belong: the script writer, the publisher and the chat read them.
+OTHER_STAGE_NOTES = re.compile(r'^(?:youtube-|descriptions-|script-|scripts-|russian-scripts|record-edits|review-needs-link|'
+                               r'corbin-effort|production-session-size|studio-disk-budget|heygen-turbo|never-failed-frames|'
+                               r'numbers-script-finds|heygen-repeated-gestures|'
+                               # the brief itself carries the current rule: blocks until «Експорт MP4», one review at the end
+                               r'no-render-until-approved|frame-review-before-handover|'
+                               r'studio-place-keyframe-rounding)')   # fixed in montage_ops.place (math.floor)
+NOTES_LIMIT = 32000   # every frame note of a channel fits; before, an alphabetical cut at 20000 dropped half of them
+
+
+def frame_notes(notes: str, channel: str) -> str:
+    """The memory notes that bear on directing and making frames, without cross-reference lines."""
+    kept, size = [], 0
+    for note in re.split(r'\n\n(?=\[[^\]\n]+\]\n)', notes.strip()) if notes.strip() else []:
+        stem = note[1:note.index(']')] if note.startswith('[') else ''
+        if OTHER_STAGE_NOTES.match(stem):
+            continue
+        if stem.startswith('kanal-') and channel.lower() not in note.lower():
+            continue   # another channel's description
+        whom = montage_context.FOR_WHOM.match(note.split('\n', 1)[1].lstrip() if '\n' in note else '')
+        named = {target for key, target in montage_context.NAMED.items() if whom and key in whom.group(1).lower()}
+        if named and not re.search(r'всіх|всех|усіх', whom.group(1)) and not any(t in channel.lower() for t in named):
+            continue   # «Для Karl Brenners Werkstatt, Олексія Горбунова й Валентина Чичваркина…»
+        note = re.sub(r'(?m)^(?:Пов.язан[оеі][^\n]*?\[\[[^\n]*$)\n?', '', note).strip()
+        if size + len(note) > NOTES_LIMIT:
+            break
+        kept.append(note)
+        size += len(note)
+    return '\n\n'.join(kept)
 
 
 def animation_style(project: dict) -> str:
@@ -206,7 +240,8 @@ def frames_brief(project: dict) -> str:
 
 Випуск: «{project['name']}», id проєкту студії {project['id']}, папка випуску «{rel}».
 Робоча папка: {root}. Студія працює на http://127.0.0.1:8770.
-Службові JSON, плани, таймінги, запити й проміжні файли зберігай усередині VideoKey Studio. Папка випуску містить матеріали користувача та готові результати. План отримуй через API студії; зв’язок анімації через GET/POST /api/projects/<id>/razgon-link.
+Службові JSON, плани, таймінги, запити й проміжні файли зберігай усередині VideoKey Studio, папка випуску лише для матеріалів користувача
+та готових результатів. План отримуй через API студії.
 
 Правила монтажу цього каналу наведені в завданні нижче. Повні AGENTS.md, CLAUDE.md, сценарії інших випусків і архіви не читай.
 
