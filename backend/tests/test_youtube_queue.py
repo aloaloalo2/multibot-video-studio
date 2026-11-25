@@ -15,6 +15,9 @@ class QueueTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             projects = {pid: {"id": pid, "channel_id": "c" + pid} for pid in ("a", "b", "c")}
+            for pid in projects:   # the queue keeps only episodes that still exist (published.queue)
+                (root / "projects" / pid).mkdir(parents=True)
+                (root / "projects" / pid / "project.json").write_text("{}")
             with patch.object(store, "DATA_ROOT", root), patch.object(store, "PROJECTS_ROOT", root / "projects"), \
                  patch.object(store, "project_dir", side_effect=lambda pid: root / "projects" / pid), \
                  patch.object(store, "load_project", side_effect=lambda pid: projects[pid]), \

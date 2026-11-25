@@ -67,9 +67,11 @@ def fill() -> int:
         mark = store.read_json(marker, {}) or {}
         if not mark.get("at") or mark.get("scheduled"):
             continue
-        try:
-            project = store.load_project(marker.parent.name)
-        except store.StudioError:
+        try:   # the name, channel and folder only: the list's cached parse, not the whole timeline
+            project = store.listed_project(marker.parent / "project.json")
+        except (OSError, ValueError, KeyError, TypeError, AttributeError, store.StudioError):
+            continue
+        if project.get("deleted_at"):
             continue
         youtube = ids.get(project.get("channel_id"))
         if not youtube:

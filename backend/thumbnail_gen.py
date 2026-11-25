@@ -134,11 +134,42 @@ def versions(pid: str) -> list[dict]:
     return sorted(items, key=lambda item: (item["number"], not item["earlier"]), reverse=True)
 
 
+SMALL = ".small.png"   # «Превью v3.small.png»: the gallery card of «Превью v3.png»
+SMALL_WIDTH = 480
+
+
 def version_file(pid: str, name: str) -> Path:
+    small = name.endswith(SMALL)
+    if small:
+        name = name[:-len(SMALL)] + ".png"
     path = keep_dir(pid) / name
     if not VERSION.fullmatch(name) or not path.is_file():
         raise store.StudioError("Прев'ю не знайдено", 404)
-    return path
+    return small_file(path) if small else path
+
+
+def small_file(path: Path) -> Path:
+    """A 480 px JPEG of a thumbnail for the gallery's cards (the originals are 1920×1080 PNG of about 2 MB: a gallery
+    of 14 versions downloaded some 27 MB), made once per version of the file in «.small» beside it. The served
+    path's suffix gives the browser image/jpeg. The original stays as it is; a failure serves the original."""
+    stat = path.stat()
+    target = path.parent / ".small" / f"{path.stem}-{stat.st_mtime_ns}-{stat.st_size}.jpg"
+    if target.is_file():
+        return target
+    try:
+        target.parent.mkdir(exist_ok=True)
+        with Image.open(path) as source:
+            image = source.convert("RGB")
+        image.thumbnail((SMALL_WIDTH, SMALL_WIDTH), Image.LANCZOS)
+        partial = target.with_name(f".{target.name}.{threading.get_ident()}.part")
+        image.save(partial, "JPEG", quality=84, optimize=True)
+        partial.replace(target)
+        for old in target.parent.glob(f"{path.stem}-*.jpg"):   # earlier versions of the same file
+            if old != target:
+                old.unlink(missing_ok=True)
+    except (OSError, ValueError, UnidentifiedImageError):
+        return path
+    return target
 
 
 def choose(pid: str, name: str) -> dict:

@@ -304,7 +304,7 @@ async function pollThumbnail(id){
 }
 
 // Opening the tab shows the gallery; selecting a saved image opens its edit workspace.
-let thumbRoute='';
+const thumbRoute='/preview';
 function renderThumbView(){
   const tab=$('view-thumb'),section=$('project-thumb');if(!tab||!section)return;
   const project=state.project,open=!!project&&state.view==='thumb';
@@ -327,7 +327,6 @@ async function buildThumbView(section,project){
       <div class="thumb-view-actions"><button type="submit" class="secondary thumb-edit-send">Внести правки</button><p class="thumb-edit-state thumb-state" role="status" aria-live="polite"></p></div></form></div>
     <section class="thumb-collection"><div class="thumb-filters" role="group" aria-label="Мова прев’ю"></div><div class="thumb-gallery-grid"><p class="thumb-gallery-empty">Завантаження…</p></div></section></div>`;
   section.querySelector('.thumb-view-create').addEventListener('click',()=>openThumbnail(project));
-  if(!thumbRoute)fetch(`/channels/${state.channel.id}/projects/${id}/preview`,{method:'GET'}).then(response=>{if(response.ok&&response.headers.get('content-type')?.includes('text/html')){thumbRoute='/preview';if(state.view==='thumb')syncRoute(true);}}).catch(()=>{});
   let data;
   try{data=await api(`/api/projects/${encodeURIComponent(id)}/thumbnail`);}catch(error){status(error.message,true);return;}
   if(section.dataset.project!==id)return;
@@ -343,7 +342,7 @@ function buildThumbnailGallery(section,project,data){
   const id=project.id,base=`/api/projects/${encodeURIComponent(id)}`;
   const flags={en:'🇬🇧',uk:'🇺🇦',ru:'🇷🇺',de:'🇩🇪',es:'🇪🇸',fr:'🇫🇷',pt:'🇵🇹',it:'🇮🇹',pl:'🇵🇱',tr:'🇹🇷',nl:'🇳🇱',hi:'🇮🇳',ar:'🇸🇦',ja:'🇯🇵',ko:'🇰🇷',zh:'🇨🇳',id:'🇮🇩',cs:'🇨🇿',ro:'🇷🇴',kk:'🇰🇿'};
   const versions=data.versions || [];
-  const items=[...versions.map(v=>({key:v.name,code:'original',base:v.name,label:'Оригінал',detail:`v${v.number}`+(v.drawer==='openrouter'?` · OpenRouter${Number.isFinite(v.cost)?' $'+v.cost.toFixed(3):''}`:''),current:v.current,comparison:v.comparison,url:`${base}/thumbnails/${encodeURIComponent(v.name)}?v=${Math.round(v.time)}`,name:v.name,flag:flags[data.original_language] || '◈'})),
+  const items=[...versions.map(v=>({key:v.name,code:'original',base:v.name,label:'Оригінал',detail:`v${v.number}`+(v.drawer==='openrouter'?` · OpenRouter${Number.isFinite(v.cost)?' $'+v.cost.toFixed(3):''}`:''),current:v.current,comparison:v.comparison,url:`${base}/thumbnails/${encodeURIComponent(v.name)}?v=${Math.round(v.time)}`,thumb:`${base}/thumbnails/${encodeURIComponent(v.name.replace(/\.png$/,'.small.png'))}?v=${Math.round(v.time)}`,name:v.name,flag:flags[data.original_language] || '◈'})),
     ...(data.translated_thumbnails || []).map(v=>({key:`${v.code}:${v.version_name}`,code:v.code,base:v.version_name,label:v.name,comparison:v.comparison,detail:v.number?`v${v.number}`:'Переклад',url:`${base}/languages/${v.code}/thumbnails/${encodeURIComponent(v.version_name)}?v=${v.stamp}`,flag:flags[v.code] || '🌐'}))];
   if(data.preview&&!versions.some(v=>v.current))items.unshift({key:'cover',code:'original',base:'current',label:'Оригінал',detail:'Обкладинка',current:true,url:`${base}/cover?v=${Date.now()}`,flag:flags[data.original_language] || '◈'});
   let selected=thumbnailSelection.get(id),filter='all';
@@ -356,14 +355,14 @@ function buildThumbnailGallery(section,project,data){
     const codes=['all',...new Set(items.map(x=>x.code))];
     filters.innerHTML=codes.map(code=>`<button type="button" data-code="${code}" aria-pressed="${code===filter}">${code==='all'?'Усі':code==='original'?'Оригінал':`${flags[code] || '🌐'} ${esc(items.find(x=>x.code===code).label)}`}</button>`).join('');
     const visible=items.filter(x=>filter==='all'||x.code===filter);
-    grid.innerHTML=visible.length?visible.map(item=>`<button type="button" class="thumb-gallery-card${item.key===selected?' selected':''}" data-key="${esc(item.key)}" aria-pressed="${item.key===selected}" aria-label="Показати ${esc(item.label)} ${esc(item.detail)}"><span class="thumb-gallery-image"><img src="${item.url}" alt="${esc(item.label)} ${esc(item.detail)}" loading="lazy">${item.current?'<em>Обкладинка</em>':''}</span><span class="thumb-gallery-caption"><b>${item.flag} ${esc(item.label)}</b><small>${esc(item.detail)}</small></span></button>`).join(''):'<p class="thumb-gallery-empty">Тут з’являться створені прев’ю та їхні переклади.</p>';
+    grid.innerHTML=visible.length?visible.map(item=>`<button type="button" class="thumb-gallery-card${item.key===selected?' selected':''}" data-key="${esc(item.key)}" aria-pressed="${item.key===selected}" aria-label="Показати ${esc(item.label)} ${esc(item.detail)}"><span class="thumb-gallery-image"><img src="${item.thumb||item.url}"${item.thumb?` data-full="${item.url}"`:''} alt="${esc(item.label)} ${esc(item.detail)}" loading="lazy">${item.current?'<em>Обкладинка</em>':''}</span><span class="thumb-gallery-caption"><b>${item.flag} ${esc(item.label)}</b><small>${esc(item.detail)}</small></span></button>`).join(''):'<p class="thumb-gallery-empty">Тут з’являться створені прев’ю та їхні переклади.</p>';
   };
   const show=(key,focus=false)=>{
     const item=items.find(x=>x.key===key);if(!item)return;
     selected=key;thumbnailSelection.set(id,key);workspace.hidden=false;editor.dataset.code=item.code;
     frame.innerHTML=`<img src="${item.url}" alt="${esc(item.label)} ${esc(item.detail)}"><div class="thumb-preview-tools"><a class="thumb-preview-download" title="Завантажити прев’ю" aria-label="Завантажити прев’ю" href="${item.url}&delivery=clean-png-v1&download=${encodeURIComponent(`Прев’ю ${item.label}.png`)}" download="Прев’ю ${esc(item.label)}.png"><svg viewBox="0 0 24 24"><path d="M12 3v12m-4-4 4 4 4-4M4 16v5h16v-5"/></svg></a></div>`;
     section.querySelector('.thumb-preview-language').textContent=`${item.flag} ${item.label} · ${item.detail}`;
-    const target=editor.querySelector('.thumb-compose-target');target.querySelector('img').src=item.url;target.querySelector('small').textContent=`${item.flag} ${item.label} · ${item.detail}`;
+    const target=editor.querySelector('.thumb-compose-target');target.querySelector('img').onerror=function(){if(this.getAttribute('src')!==item.url)this.src=item.url;};target.querySelector('img').src=item.thumb||item.url;target.querySelector('small').textContent=`${item.flag} ${item.label} · ${item.detail}`;
     input.value=thumbnailDrafts.get(`${id}:${key}`)||'';
     compare(item,items,data);
     logoTool(item);
@@ -374,6 +373,8 @@ function buildThumbnailGallery(section,project,data){
   editor.addEventListener('submit',event=>{event.preventDefault();const item=items.find(x=>x.key===selected);if(item)editThumbnail(project,item,input.value);});
   section.querySelector('.thumb-edit-close').addEventListener('click',()=>{workspace.hidden=true;selected=null;thumbnailSelection.delete(id);draw();});
   filters.addEventListener('click',event=>{const button=event.target.closest('button[data-code]');if(button){filter=button.dataset.code;draw();}});
+  // a studio not yet restarted knows no «.small.png»: its card shows the original instead
+  grid.addEventListener('error',event=>{const img=event.target;if(img.dataset?.full&&img.getAttribute('src')!==img.dataset.full)img.src=img.dataset.full;},true);
   grid.addEventListener('click',event=>{const button=event.target.closest('[data-key]');if(button)show(button.dataset.key,true);});
   choose.addEventListener('click',async()=>{
     const item=items.find(x=>x.key===selected);if(!item?.name)return;choose.disabled=true;
