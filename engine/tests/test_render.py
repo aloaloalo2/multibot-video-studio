@@ -275,7 +275,8 @@ class RenderIntegration(unittest.TestCase):
         for second in (.1, .75, 1.4):
             image = self.frame(output, second)
             card = [x for x in range(320) if image.getpixel((x, 75))[2] > 150 and image.getpixel((x, 75))[0] < 90]
-            white = [x for x in range(320) for y in range(70, 110) if min(image.getpixel((x, y))) > 200]
+            # at 0.1 s the word is still coming in (its entrance fade): its brightest pixel is about 199, not full white
+            white = [x for x in range(320) for y in range(70, 110) if min(image.getpixel((x, y))) > 150]
             self.assertTrue(card and white, second)
             self.assertAlmostEqual((min(white) + max(white)) / 2, (min(card) + max(card)) / 2, delta=6, msg=second)
 

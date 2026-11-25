@@ -149,8 +149,9 @@ class NarrationConcurrencyTests(unittest.TestCase):
             (narration.root(project['id']) / (entry['key'] + '.mp3')).write_bytes(entry['text'].encode())
         with patch.object(lab.heygen_voice, 'synthesize') as paid:
             narration.start(project, text)
-            self.workers[-1].join(5)
-        self.assertFalse(self.workers[-1].is_alive())
+            for worker in self.workers:   # the narration may hand off to further threads (closing pause, next stage)
+                worker.join(5)
+        self.assertFalse(any(worker.is_alive() for worker in self.workers))
         job = store.read_json(narration.root(project['id']) / 'job.json')
         self.assertEqual(job['status'], 'done', job.get('error'))
         listing = (narration.root(project['id']) / 'concat.txt').read_text().splitlines()
@@ -177,7 +178,7 @@ class NarrationConcurrencyTests(unittest.TestCase):
         self.assertEqual([job['status'] for job in jobs], ['done', 'done'])
         paid.assert_called_once()
         amounts = [sum(row['amount'] for row in store.read_json(self.project_dir(pid) / 'project-costs.json')['events'].values()) for pid in self.projects]
-        self.assertAlmostEqual(sum(amounts), len(text) * 30 / 1_000_000)
+        self.assertAlmostEqual(sum(amounts), len(text) * lab.heygen_voice.RATES['heygen-voice-1'])
         self.assertEqual(sum(amount > 0 for amount in amounts), 1)
 
     def test_each_explicit_queued_project_attempts_its_failed_phrase_once(self):
