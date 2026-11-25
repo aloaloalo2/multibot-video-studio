@@ -1280,7 +1280,7 @@ A CapCut transition's marker is white on the timeline until its preview is drawn
 
 ## Text frames as one block, keyboard for texts, transitions on Razgon edges (25 November 2026)
 
-A full-frame text frame stands as one block in the middle of the frame: `montage_ops.compose_text` (run with the sounds after production, `summary` reports «текст розкиданий») centres its parts by their letters, stacks them with one gap (`TEXT_GAP` rows) and moves a phrase laid over its own words with them; frames with a picture or motion code beside the words keep the director's composition. Test: `backend/tests/test_text_compose.py`.
+A full-frame text frame stands as one block in the middle of the frame: `montage_ops.compose_text` (run with the sounds after production, `summary` reports «текст розкиданий») centres its parts by their letters, stacks them with one gap (`TEXT_GAP` rows) and moves a phrase laid over its own words with them; frames with a picture or motion code beside the words keep the director's composition. Lines break by sense (`typography.breaks`): the fewest lines, about one length each, a line ending after a comma or colon rather than mid-phrase, never on a preposition, conjunction or «который», never inside a number written out. Test: `backend/tests/test_text_compose.py`.
 
 Every text insert sounds like a keyboard, whatever its entrance, and so does text written letter by letter in Razgon frames or motion code; a pencil only where the code draws a hand, a pen, chalk or a marker writing (`soundtrack.HAND`, `event_sounds.mark_hands`; user: «коли текстові вставки то там краще підходить звук клавіатури а коли рука на екрані шось пише то звук олівця»). Drawn arrows and rings keep the pencil.
 

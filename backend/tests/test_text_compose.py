@@ -67,3 +67,25 @@ class ComposeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LineBreakTest(unittest.TestCase):
+    """Lines break by sense (user, 25 November 2026: «дуже дивно чому текст так дивно розташований»)."""
+
+    def lines(self, text, limit=967):
+        import typography
+        words = text.split()
+        sizes = [len(w) * 32.0 for w in words]
+        cuts = typography.breaks(words, sizes, 16.0, limit)
+        return [" ".join(words[a:b]) for a, b in zip([0] + cuts, cuts + [len(words)])]
+
+    def test_no_line_ends_on_a_preposition_and_numbers_stay_whole(self):
+        for line in self.lines("Одна мигающая звезда на одной пластинке закрыла спор, который тянулся десятилетиями"):
+            self.assertNotIn(line.split()[-1], {"на", "в", "с", "который"})
+        joined = self.lines("Андромеда приближается к нам со скоростью сто десять километров в секунду")
+        self.assertFalse(any(line.endswith("сто") for line in joined))
+
+    def test_lines_are_about_one_length(self):
+        lines = self.lines("Получается, глаз ловит свет, который был в пути дольше, чем существует всё человечество")
+        widths = [len(line) for line in lines]
+        self.assertLess(max(widths) - min(widths), 16)
