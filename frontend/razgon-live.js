@@ -3,17 +3,10 @@
 // waiting for rendered clips. The studio keeps its own timeline and audio. Shown only when the episode folder has
 // razgon.json; the backend starts the live server on demand (backend/razgon_live.py).
 (() => {
-  const live = {}, KEY = 'razgonLiveMonitor', QKEY = 'razgonLiveScale';
-  const read = (key, fallback) => { try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; } };
-  const write = (key, value) => { try { localStorage.setItem(key, value); } catch {} };
-
-  const tools = document.createElement('div');
-  tools.className = 'razgon-live-tools'; tools.hidden = true;
-  tools.innerHTML = '<button id="razgon-live-toggle" type="button" aria-pressed="false" title="Малювати кадри Razgon наживо, без рендеру">Наживо</button>'
-    + '<select id="razgon-live-quality" aria-label="Якість живого перегляду" title="Якість живого перегляду"><option value="0.33">низька</option><option value="0.5">середня</option><option value="0.75">висока</option></select>';
-  document.querySelector('.preview-tools').prepend(tools);
-  const toggle = tools.querySelector('button'), quality = tools.querySelector('select');
-  quality.value = read(QKEY, '0.5');
+  const live = {};
+  // the switch and the quality left the preview with its settings (user, 25 November 2026: «настройки оці прибрав»): the
+  // live view is always on, at the quality chosen before (or the middle one)
+  const scale = (() => { try { const saved = localStorage.getItem('razgonLiveScale'); return ['0.33', '0.5', '0.75'].includes(saved) ? saved : '0.5'; } catch { return '0.5'; } })();
   const frame = document.createElement('iframe');
   frame.id = 'razgon-live-frame'; frame.title = 'Razgon наживо'; frame.hidden = true;
   $('preview-content').append(frame);
@@ -39,13 +32,12 @@
     finally { button.disabled = false; }
   });
   const style = document.createElement('style');
-  style.textContent = '.razgon-live-note{position:absolute;inset:0;z-index:30;display:grid;place-content:center;justify-items:center;gap:12px;padding:24px;text-align:center;background:#0a0b0ccc}.razgon-live-note[hidden]{display:none}.razgon-live-note p{margin:0;max-width:520px;color:#e6e7ea;font-size:13.5px;line-height:1.5}' + '.razgon-live-tools{display:inline-flex;gap:6px;align-items:center}.razgon-live-tools button,.razgon-live-tools select{background:#24252a;color:inherit;border:1px solid #3f4046;border-radius:9px;padding:4px 9px;font:inherit;font-size:12px;cursor:pointer}.razgon-live-tools button[aria-pressed="true"]{border-color:#f0b429;color:#f0b429}.razgon-live-tools select[hidden]{display:none}#razgon-live-frame,#razgon-live-frame-out{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000;z-index:0;pointer-events:none;transform-origin:50% 50%}#razgon-live-frame-out{visibility:hidden}.razgon-live-on #preview-composition{background:transparent;z-index:1}';
+  style.textContent = '.razgon-live-note{position:absolute;inset:0;z-index:30;display:grid;place-content:center;justify-items:center;gap:12px;padding:24px;text-align:center;background:#0a0b0ccc}.razgon-live-note[hidden]{display:none}.razgon-live-note p{margin:0;max-width:520px;color:#e6e7ea;font-size:13.5px;line-height:1.5}' + '#razgon-live-frame,#razgon-live-frame-out{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000;z-index:0;pointer-events:none;transform-origin:50% 50%}#razgon-live-frame-out{visibility:hidden}.razgon-live-on #preview-composition{background:transparent;z-index:1}';
   document.head.append(style);
 
   const info = () => state.project && live[state.project.id];
-  // always live: the switch left the preview with its settings (user, 25 November 2026: «настройки оці прибрав»)
   const active = () => !!info()?.url;
-  const source = () => `${info().url}?embed=1&scale=${quality.value}`;
+  const source = () => `${info().url}?embed=1&scale=${scale}`;
   // the live frame comes into view only with its own moment on the canvas (user, 25 November 2026: «з другого на третій
   // кадр… пригає на якийсь… кадр посередині… а потім… початок»): after a jump of time it waits for the page's «drawn»
   let drawnAt = null, waitingFor = null, waitTimer = null, wasOn = false, lastT = null;
@@ -99,8 +91,6 @@
   }
   function sync() {
     const on = active();
-    tools.hidden = !info()?.available; quality.hidden = !on;
-    toggle.setAttribute('aria-pressed', String(on));
     if (on && frame.dataset.src !== source()) { frame.src = source(); frame.dataset.src = frame.src; watchStart(state.project.id); }
     if (!on && frame.dataset.src) { frame.removeAttribute('src'); delete frame.dataset.src; }
     // the second player loads with the first, so a seam shows at once while playing
@@ -108,27 +98,57 @@
     if (!on && frameOut.dataset.src) { frameOut.removeAttribute('src'); delete frameOut.dataset.src; }
     frame.hidden = frameOut.hidden = !on; if (!on) showNote('');
   }
-  toggle.addEventListener('click', () => { write(KEY, active() ? '0' : '1'); sync(); renderPreview(); });
-  quality.addEventListener('change', () => { write(QKEY, quality.value); sync(); });
 
-  // A mixed episode (photos, stock, text frames and some Razgon frames, e.g. Alexey Gorbunov's): only its razgon_2d frames
-  // are drawn live, and only while the playhead is inside one; the rest of the timeline plays as usual. null: all Razgon.
-  const razgonFrames = () => {
-    const frames = state.plan?.frames || [], fps=state.project?.fps||25;
-    const own = frames.filter(f=>f.format==='razgon_2d').map(f=>({...f,sourceStart:f.start,sourceEnd:f.end,
-      start:Math.floor(f.start*fps+.5+1e-8)/fps,end:Math.floor(f.end*fps+.5+1e-8)/fps}));
-    return own.length && own.length < frames.length ? own : null;
-  };
-
-  // Every Razgon frame of the plan with its whole-frame edges, for the seams between two of them.
-  const allRazgon = () => {
-    const fps = state.project?.fps || 25;
-    return (state.plan?.frames || []).filter((f) => f.format === 'razgon_2d').map((f) => ({ ...f, sourceStart: f.start, sourceEnd: f.end,
-      start: Math.floor(f.start * fps + .5 + 1e-8) / fps, end: Math.floor(f.end * fps + .5 + 1e-8) / fps }));
-  };
-  const blockOf = (f) => {
-    const group = sceneGroups().find((g) => g.title === `Кадр ${f.number}`);
-    return group ? groupMembers(group).find((clip) => /^Razgon · кадр/.test(clip.title || '')) : null;
+  // Everything the live view reads about the film's Razgon frames, built once per version of the project and plan: the
+  // preview asks for it on every screen refresh, and rebuilt each time (the plan's frames, their groups, the seams around
+  // them, and a new layers() function that missed renderUniversalPreview's span cache) it took 8-12 ms of a 16 ms frame on
+  // a 514-layer episode (25 November 2026).
+  let model = null;
+  const razgonModel = () => {
+    const project = state.project, plan = state.plan;
+    if (model && model.project === project && model.plan === plan) return model;
+    const fps = project?.fps || 25, frames = plan?.frames || [], whole = (time) => Math.floor(time * fps + .5 + 1e-8) / fps;
+    // Every Razgon frame of the plan with its whole-frame edges, for the seams between two of them.
+    const all = frames.filter((f) => f.format === 'razgon_2d').map((f) => ({ ...f, sourceStart: f.start, sourceEnd: f.end, start: whole(f.start), end: whole(f.end) }));
+    // A mixed episode (photos, stock, text frames and some Razgon frames, e.g. Alexey Gorbunov's): only its razgon_2d frames
+    // are drawn live, and only while the playhead is inside one; the rest of the timeline plays as usual. null: all Razgon.
+    const own = all.length && all.length < frames.length ? all : null;
+    const groups = sceneGroups(), joins = project?.join_transitions || [], byTitle = new Map();
+    for (const group of groups) if (!byTitle.has(group.title)) byTitle.set(group.title, group);
+    const info = new Map();
+    for (const f of all) {
+      const group = byTitle.get(`Кадр ${f.number}`), ref = `group:${group?.id}`;
+      const block = group ? groupMembers(group).find((clip) => /^Razgon · кадр/.test(clip.title || '')) || null : null;
+      // while a transition fades out of a Razgon frame its last picture stays under the incoming frame, as the export's
+      // held tail; the tail ends where the transition and the block end, on whole video frames (joinFrames, clipRenderEnd):
+      // the raw seam + duration ended one frame early, and for that frame the block's black base showed over the next
+      // picture (user, 25 November 2026: «після переходу просто чорний на один фрейм показується»)
+      const tail = joins.find((join) => join.from_ref === ref && Math.abs(join.seam - f.end) < .05);
+      const tailEnd = tail ? joinFrames(tail).seam + joinFrames(tail).duration : f.end;
+      // a transition into the frame that ends on its seam (out of the host's video, joins.ends_at_seam) shows the frame's
+      // first moment from the transition's start
+      const lead = joins.find((j) => j.to_ref === ref && joinAhead(j) > 0 && Math.abs(j.seam - f.start) < .05);
+      const into = joins.find((join) => join.to_ref === ref);
+      const from = into && groups.find((g) => `group:${g.id}` === into.from_ref);
+      info.set(f, { block, tailEnd, head: lead ? joinFrames(lead).seam : f.start, into, from });
+    }
+    // seams between two Razgon frames: the frame before and after each one
+    const near = (a, b) => Math.abs(a - b) < 1 / fps / 2;
+    for (const f of all) { const own = info.get(f); own.outgoing = all.find((o) => near(o.end, f.start)) || null; own.ahead = all.find((o) => near(o.start, f.end)) || null; }
+    // a frame whose row is switched off with its eye is not drawn live either (user, 2 November 2026: «нажав око, але
+    // вони не пропали»): the Razgon blocks under the playhead must sit on a row that is seen
+    const baseLayers = layers, hiddenClip = new Set(), blocks = [];
+    for (const layer of baseLayers()) for (const clip of layer.clips || []) {
+      if (layer.hidden) hiddenClip.add(clip.id);
+      if (/^Razgon · кадр/.test(clip.title || '')) blocks.push({ clip, start: Number(clip.start), end: Number(clip.start) + Number(clip.duration) });
+    }
+    const titles = own && new Set(own.map((f) => `Кадр ${f.number}`));
+    const keep = new Set(groups.filter((group) => group.role === 'overlay').flatMap((group) => group.clip_ids));
+    const drawn = own && new Set(groups.filter((group) => titles.has(group.title)).flatMap((group) => group.clip_ids));
+    // the layers the studio still draws over the live player: one function for this version, so the span cache keyed by it holds
+    const overLive = baseLayers().map((layer) => ({ ...layer, clips: (layer.clips || []).filter((clip) => clip.kind === 'audio' || keep.has(clip.id) || (drawn && !drawn.has(clip.id))) }));
+    model = { project, plan, all, own, info, hiddenClip, blocks, titles, layers: () => overLive };
+    return model;
   };
   const place = (element, clip, local) => {
     const base = { x: .5, y: .5, scale: 1, opacity: 1 };
@@ -152,14 +172,13 @@
   // t inside the transition of a seam between two Razgon frames: the incoming frame in the first player, the outgoing
   // one held at its last moment in the second, each moved by the transition; anything else: the first player as it is
   function seam(t) {
-    const frames = t === null ? [] : allRazgon(), fps = state.project?.fps || 25;
-    const incoming = frames.find((f) => t >= f.start && t < f.end);
-    const outgoing = incoming && frames.find((f) => Math.abs(f.end - incoming.start) < 1 / fps / 2);
+    const { all, info } = razgonModel();
+    const incoming = t === null ? null : all.find((f) => t >= f.start && t < f.end), near = incoming && info.get(incoming);
+    const outgoing = near?.outgoing;
     // warm up: the frame playing now ends in a seam with a transition into another Razgon frame
-    const ahead = incoming && frames.find((f) => Math.abs(f.start - incoming.end) < 1 / fps / 2);
-    const aheadClip = ahead && blockOf(incoming);
+    const aheadClip = near?.ahead && near.block;
     if (aheadClip && transitionInfo(aheadClip).outgoing) outPost(incoming.sourceEnd, [incoming.sourceStart, incoming.sourceEnd]);
-    const inClip = outgoing && blockOf(incoming), outClip = outgoing && blockOf(outgoing);
+    const inClip = outgoing && near.block, outClip = outgoing && info.get(outgoing).block;
     const join = outClip && transitionInfo(outClip).outgoing;
     const span = join && joinFrames(join);
     if (!span || t < span.seam || t >= span.seam + span.duration) {
@@ -180,22 +199,9 @@
   // overlay layers (the channel plashka group), and the studio keeps time and sound.
   const baseUniversal = renderUniversalPreview;
   renderUniversalPreview = function (...args) {
-    const own = razgonFrames(), t = state.playhead, content = $('preview-content');
-    // while a transition fades out of a Razgon frame its last picture stays under the incoming frame, as the export's held tail
-    const groupId = (f) => sceneGroups().find((group) => group.title === `Кадр ${f.number}`)?.id;
-    const tail = (f) => (state.project?.join_transitions || []).find((join) => join.from_ref === `group:${groupId(f)}` && Math.abs(join.seam - f.end) < .05);
-    // a frame whose row is switched off with its eye is not drawn live either (user, 2 November 2026: «нажав око, але
-    // вони не пропали»): the Razgon blocks under the playhead must sit on a row that is seen
-    const hiddenClip = new Set(layers().filter((layer) => layer.hidden).flatMap((layer) => (layer.clips || []).map((clip) => clip.id)));
-    const blocksAt = (time) => layers().flatMap((layer) => layer.clips || []).filter((clip) => /^Razgon · кадр/.test(clip.title || '') && time >= Number(clip.start) && time < Number(clip.start) + Number(clip.duration));
-    const seen = (time) => { const blocks = blocksAt(time); return !blocks.length || blocks.some((clip) => !hiddenClip.has(clip.id)); };
-    // the tail ends where the transition and the block end, on whole video frames (joinFrames, clipRenderEnd): the raw
-    // seam + duration ended one frame early, and for that frame the block's black base showed over the next picture
-    // (user, 25 November 2026: «після переходу просто чорний на один фрейм показується»)
-    const tailEnd = (f) => { const join = tail(f); if (!join) return f.end; const span = joinFrames(join); return span.seam + span.duration; };
-    // a transition into the frame that ends on its seam (out of the host's video, joins.ends_at_seam) shows the frame's
-    // first moment from the transition's start
-    const head = (f) => { const join = (state.project?.join_transitions || []).find((j) => j.to_ref === `group:${groupId(f)}` && joinAhead(j) > 0 && Math.abs(j.seam - f.start) < .05); return join ? joinFrames(join).seam : f.start; };
+    const m = razgonModel(), own = m.own, t = state.playhead, content = $('preview-content');
+    const head = (f) => m.info.get(f).head, tailEnd = (f) => m.info.get(f).tailEnd;
+    const seen = (time) => { let any = false; for (const { clip, start, end } of m.blocks) if (time >= start && time < end) { if (!m.hiddenClip.has(clip.id)) return true; any = true; } return !any; };
     const inside = own && own.find((f) => t >= head(f) && t < f.end), fading = own && !inside && own.find((f) => t >= f.end && t < tailEnd(f));
     const sourceFrame=inside||fading;
     // past the frame's edges (a transition's tail, or an early start) the player draws the frame's edge shot on, alive
@@ -217,18 +223,14 @@
     } else if (waitingFor === null) frame.style.visibility = '';
     seam(on && !fading ? t : null);
     if (!on) return baseUniversal.apply(this, args);
-    const titles = own && new Set(own.map((f) => `Кадр ${f.number}`));
-    const keep = new Set(sceneGroups().filter((group) => group.role === 'overlay').flatMap((group) => group.clip_ids)), all = layers;
-    const drawn = own && new Set(sceneGroups().filter((group) => titles.has(group.title)).flatMap((group) => group.clip_ids));
-    layers = () => all().map((layer) => ({ ...layer, clips: (layer.clips || []).filter((clip) => clip.kind === 'audio' || keep.has(clip.id) || (drawn && !drawn.has(clip.id))) }));
+    const all = layers; layers = m.layers;
     try { baseUniversal.apply(this, args); } finally { layers = all; }
     // a seam from another kind of frame (the host's video, a photo, a text) into a Razgon frame: the live player lies
     // under the picture, so the outgoing frame fades out over it, a dissolve (user, 25 November 2026: «29:30… нажимаю
     // play… не показує… перехід»); before, its held last picture covered the player and then vanished, a cut
     if (inside) {
-      const into = (state.project?.join_transitions || []).find((join) => join.to_ref === `group:${groupId(inside)}`);
-      const from = into && sceneGroups().find((group) => `group:${group.id}` === into.from_ref);
-      const span = from && !titles.has(from.title) && joinFrames(into);
+      const { into, from } = m.info.get(inside);
+      const span = from && !m.titles.has(from.title) && joinFrames(into);
       if (span && t >= span.seam && t < span.seam + span.duration) {
         const left = 1 - easedProgress((t - span.seam) / span.duration, 'ease_in_out');
         for (const id of from.clip_ids) { const node = state.previewNodes.get(id); if (node) node.style.opacity = String(Math.max(0, Math.min(Number(node.style.opacity || 1), left))); }

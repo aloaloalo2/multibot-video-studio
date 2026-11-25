@@ -52,9 +52,13 @@ def _media(project: dict, clip: dict) -> str:
         raise NotTheFilm(f"немає файлу кліпу «{clip.get('title', '')}»") from None
 
 
-def _film(project: dict, info: dict) -> dict:
+def _frames_link(info: dict) -> dict:
+    return store.read_json(info["project"] / "story" / "studio_frames.json", {}) or {}
+
+
+def _film(project: dict, info: dict, link: dict | None = None) -> dict:
     """Which rendered clip the timeline holds for every frame of the Razgon film (None for a code block), and the plate."""
-    link = store.read_json(info["project"] / "story" / "studio_frames.json", {})
+    link = _frames_link(info) if link is None else link
     if link.get("project_id") != project["id"]:
         raise NotTheFilm("проєкт Razgon прив'язано до іншого випуску студії")
     plan = store.load_project_plan(project["id"]) or {}
@@ -116,14 +120,14 @@ def _layered(project: dict, plate: str | None, logo: str | None) -> str | None:
     return str(target)
 
 
-def canonicalize_legacy_blocks(project: dict, info: dict) -> list[str]:
+def canonicalize_legacy_blocks(project: dict, info: dict, link: dict | None = None) -> list[str]:
     """Upgrade old banker-rounded code slots in this export snapshot only.
 
     A genuine move must still fail validation. Accept only untouched invisible code blocks
     whose exact endpoints are the old or current quantization of the matching source plan.
     Rendered clips and authored timing/effects are never rewritten here.
     """
-    link = store.read_json(info["project"] / "story" / "studio_frames.json", {})
+    link = _frames_link(info) if link is None else link
     if link.get("project_id") != project["id"] or link.get("fps") != project.get("fps"):
         return []
     fps = int(link["fps"])
@@ -154,15 +158,16 @@ def export_job(project: dict) -> dict | None:
     blocks = [clip for track in project.get("tracks", []) for clip in track.get("clips", [])
               if FRAME_TITLE.fullmatch(clip.get("title", "")) and clip.get("kind") != "video"]
     info = razgon_live.link(project)
+    link = _frames_link(info) if info else None   # read once for the three checks below
     if info:
-        canonicalize_legacy_blocks(project, info)
+        canonicalize_legacy_blocks(project, info, link)
     try:
         if not info or not BRIDGE.is_file():
             raise NotTheFilm("не знайдено проєкт Razgon або razgon_bridge.py")
-        spec = _film(project, info)
+        spec = _film(project, info, link)
     except NotTheFilm as reason:
         if blocks and info and BRIDGE.is_file():
-            return _mixed(project, info, blocks)
+            return _mixed(project, info, blocks, link)
         if blocks:
             raise store.StudioError(f"Кадри Razgon ще не відрендерені, а студія не може їх зібрати: {reason}.", 409) from None
         return None
@@ -172,11 +177,11 @@ def export_job(project: dict) -> dict | None:
     return spec
 
 
-def _mixed(project: dict, info: dict, blocks: list[dict]) -> dict:
+def _mixed(project: dict, info: dict, blocks: list[dict], link: dict | None = None) -> dict:
     """A timeline that is more than the Razgon film (photos, stock and text frames around some Razgon frames, or the
     author's own clips and transitions): `razgon_bridge.py frames` renders only the code blocks, then the Studio engine
     exports the whole timeline with each block drawn from its rendered clip. {clip id: frame number} of the blocks."""
-    link = store.read_json(info["project"] / "story" / "studio_frames.json", {})
+    link = _frames_link(info) if link is None else link
     if link.get("project_id") != project["id"]:
         raise store.StudioError("Проєкт Razgon прив'язано до іншого випуску студії.", 409)
     fps = int(link["fps"])

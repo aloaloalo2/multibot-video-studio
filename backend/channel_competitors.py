@@ -1,5 +1,6 @@
 """Channel-local saved YouTube competitors; public identity lookup only."""
 import base64
+import hashlib
 import io
 import json
 import re
@@ -108,3 +109,27 @@ def remove(cid, identity):
         rows = [row for row in read(cid) if row['id'] != identity]
         store.atomic_json(path(cid), {'competitors': rows})
     return {'competitors': rows}
+
+
+def public(cid, rows):
+    """The list as the page gets it: each inline picture becomes a link the browser keeps. 77 pictures inside the JSON
+    made every opening of the settings 2 MB (25 November 2026); the saved file keeps them inline (trends, transfer)."""
+    out = []
+    for row in rows:
+        icon = row.get('icon_url')
+        if isinstance(icon, str) and icon.startswith('data:image/png;base64,') and CHANNEL_ID.fullmatch(str(row.get('id'))):
+            row = {**row, 'icon_url': f"/api/channels/{cid}/competitors/{row['id']}/icon?v={hashlib.sha256(icon.encode()).hexdigest()[:12]}"}
+        out.append(row)
+    return {'competitors': out}
+
+
+def icon(cid, identity):
+    """PNG bytes of a saved competitor's picture, or None."""
+    for row in read(cid):
+        value = row.get('icon_url')
+        if row.get('id') == identity and isinstance(value, str) and value.startswith('data:image/png;base64,'):
+            try:
+                return base64.b64decode(value.split(',', 1)[1], validate=True)
+            except ValueError:
+                return None
+    return None

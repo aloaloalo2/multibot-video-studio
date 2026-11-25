@@ -49,5 +49,70 @@ class CapcutRenderTest(unittest.TestCase):
             self.assertTrue(g > r and g > b, (r, g, b))             # the green CRT over B
 
 
+class NearTest(unittest.TestCase):
+    """A seam is drawn from the clips near it, not the whole film."""
+    def layers(self, transition=None):
+        clip = lambda i, start, dur, **extra: dict(id=i, type="image", start=start, duration=dur, **extra)
+        return [dict(id="bg", z=0, clips=[clip("long", 0, 600)]),
+                dict(id="a", z=1, clips=[clip("far", 10, 3, transition=transition or {"type": "cut", "duration": 0}),
+                                         clip("A", 296, 4), clip("B", 300, 4)]),
+                dict(id="c", z=2, clips=[clip("later", 310, 3)])]
+
+    def test_only_clips_reaching_the_window_stay(self):
+        near = capcut_fx._near(self.layers(), 300, 300.7)
+        self.assertEqual([[c["id"] for c in layer["clips"]] for layer in near], [["long"], ["A", "B"]])
+
+    def test_a_film_with_fades_between_clips_stays_whole(self):
+        layers = self.layers({"type": "crossfade", "duration": .5})
+        self.assertIs(capcut_fx._near(layers, 300, 300.7), layers)
+
+    def test_layers_keep_their_place_after_the_others_are_dropped(self):
+        stripped = capcut_fx._strip([dict(id="x", clips=[dict(id="X", type="image", start=0, duration=1)]),
+                                     dict(id="y", clips=[dict(id="Y", type="image", start=0, duration=1)])], set())
+        self.assertEqual([layer["z"] for layer in stripped], [0.0, 1.0])
+
+
+@unittest.skipUnless((capcut_fx.ASSETS / "effects").is_dir(), "the CapCut packages are not installed")
+class PreviewTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.old = os.environ.get("MULTIBOT_STUDIO_DATA")
+        os.environ["MULTIBOT_STUDIO_DATA"] = self.temp.name
+
+    def tearDown(self):
+        if self.old is None:
+            os.environ.pop("MULTIBOT_STUDIO_DATA", None)
+        else:
+            os.environ["MULTIBOT_STUDIO_DATA"] = self.old
+        self.temp.cleanup()
+
+    def test_effects_that_change_the_frame_have_a_library_preview(self):
+        # «Ковзне тремтіння», «Скляний браслет» and «Зелений CRT» had no loop length and answered 500
+        for name in ("capcut_e07", "capcut_e08", "capcut_e12", "capcut_e03"):
+            path = capcut_fx.effect_preview(name, 160, 90)
+            self.assertGreater(path.stat().st_size, 0, name)
+
+    def test_the_last_frame_of_a_transition_shows_the_incoming_side(self):
+        # 0.35 s and 0.7 s at 25 fps from a seam between whole frames: 9 and 18 frames, the last one the incoming side
+        work = Path(self.temp.name)
+        for colour, name in (("red", "a"), ("blue", "b")):
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"color=c={colour}:s=320x180:r=25:d=1",
+                            "-pix_fmt", "yuv420p", str(work / f"{name}.mp4")], check=True)
+        worker = capcut_fx._Worker.get(320, 180)
+        entry = capcut_fx.TRANSITIONS["capcut_t09"]
+        for frames in (9, 18):
+            out = work / f"t-{frames}.mp4"
+            worker.run({"codec": "mp4", "mode": "transition", "index": 8, "fps": 25, "frames": frames,
+                        "package": str(capcut_fx.package("capcut_transition", entry)), "comp": entry["default_duration"],
+                        "a_video": str(work / "a.mp4"), "b_video": str(work / "b.mp4"), "out": str(out),
+                        "out_width": 320, "out_height": 180})
+            raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(out), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                                 capture_output=True).stdout
+            self.assertEqual(len(raw), frames * 320 * 180 * 3)
+            o = (frames - 1) * 320 * 180 * 3 + (90 * 320 + 160) * 3
+            self.assertTrue(raw[o + 2] > 150 and raw[o] < 90, (frames, raw[o:o + 3]))
+        self.assertIs(capcut_fx._Worker.get(320, 180), worker)   # one worker serves every transition of a render
+
+
 if __name__ == "__main__":
     unittest.main()

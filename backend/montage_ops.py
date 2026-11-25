@@ -1224,40 +1224,153 @@ def _composable(frame: dict) -> list[dict] | None:
     return texts or None
 
 
-def text_layout_changes(frame: dict) -> list[tuple[dict, dict]]:
-    """The moves that make a full-frame text frame's parts one block in the middle of the frame: every part centred
-    across, the parts stacked with one even gap, the block centred down; a coloured phrase laid over its own words moves
+def text_layout_changes(frame: dict, size: tuple[int, int] = (1920, 1080)) -> list[tuple[dict, dict]]:
+    """The changes that make a full-frame text frame's parts one block in the middle of the frame: every part centred
+    across, the block centred down, and a part that goes on the sentence in another colour (Andromeda 40: «…пятна
+    оказались / отдельными галактиками») written at the main text's size as its next line, at its own line spacing
+    (user, 25 November 2026: «тут чому так? і розмір шрифта різний»). A coloured phrase laid over its own words moves
     with them. Empty when the frame stands so already or is not the studio's to lay out (see _composable)."""
+    import copy
     texts = _composable(frame)
     if not texts:
         return []
+    W, H = size
+    # the main text is the part with the most words; the others take its size, with their words laid out again
+    main = max(texts, key=lambda c: len(c.get("text_words") or []))
+    font = int(main.get("font_size") or 0)
+    resized = {}
+    for clip in texts:
+        if clip is main or not font or int(clip.get("font_size") or 0) == font or not clip.get("text_words"):
+            continue
+        overlaid = _text_extent(clip)[0] < _text_extent(main)[1] - .01 and _text_extent(clip)[1] > _text_extent(main)[0] + .01
+        if overlaid:   # a highlight over the main words keeps the size it was laid with
+            continue
+        trial = copy.deepcopy(clip)
+        trial["font_size"] = font
+        typography.reflow({"width": W, "height": H}, trial, clip.get("font_family") or main.get("font_family") or "Golos")
+        resized[clip["id"]] = trial
+    view = lambda c: resized.get(c["id"], c)
     units: list[list[dict]] = []
-    for clip in sorted(texts, key=lambda c: _text_extent(c)[0]):
-        top, bottom, _ = _text_extent(clip)
+    for clip in sorted(texts, key=lambda c: _text_extent(view(c))[0]):
+        top, bottom, _ = _text_extent(view(clip))
         if units:
-            utop, ubottom = min(_text_extent(c)[0] for c in units[-1]), max(_text_extent(c)[1] for c in units[-1])
+            utop, ubottom = min(_text_extent(view(c))[0] for c in units[-1]), max(_text_extent(view(c))[1] for c in units[-1])
             if top < ubottom - .01 and bottom > utop + .01:
                 units[-1].append(clip)
                 continue
         units.append([clip])
-    spans = [(min(_text_extent(c)[0] for c in u), max(_text_extent(c)[1] for c in u)) for u in units]
-    gap = TEXT_GAP * max(_text_extent(c)[2] for c in texts)
+    spans = [(min(_text_extent(view(c))[0] for c in u), max(_text_extent(view(c))[1] for c in u)) for u in units]
+    # the parts stand line under line: the main text's own spacing (typography: rows 1.45 of the size apart, 1.4 high)
+    gap = font * .05 / H if font else TEXT_GAP * max(_text_extent(c)[2] for c in texts)
     cursor = .5 - (sum(b - t for t, b in spans) + gap * (len(units) - 1)) / 2
     moves = []
     for unit, (top, bottom) in zip(units, spans):
         dy = cursor - top
         cursor += bottom - top + gap
         # a unit moves as one: a highlight laid over some of its words keeps standing on them
-        dx = .5 - (min(_letters_span(c)[0] for c in unit) + max(_letters_span(c)[1] for c in unit)) / 2
+        dx = .5 - (min(_letters_span(view(c))[0] for c in unit) + max(_letters_span(view(c))[1] for c in unit)) / 2
         for clip in unit:
-            if abs(dx) < .004 and abs(dy) < .004:
+            shown = view(clip)
+            if abs(dx) < .004 and abs(dy) < .004 and shown is clip:
                 continue
             changes = {"x": round(float(clip.get("x", .5)) + dx, 5), "y": round(float(clip.get("y", .5)) + dy, 5)}
+            if shown is not clip:
+                changes.update(font_size=shown["font_size"], text_words=shown["text_words"])
             if any("x" in k or "y" in k for k in clip.get("keyframes") or []):
                 changes["keyframes"] = [{**k, **({"x": round(float(k["x"]) + dx, 5)} if "x" in k else {}),
                                          **({"y": round(float(k["y"]) + dy, 5)} if "y" in k else {})} for k in clip["keyframes"]]
             moves.append((clip, changes))
     return moves
+
+
+LEAD_SIZE, KEY_SIZE = 54, 112   # px at 1080 lines: the lead-in reads quietly, the key phrase is the frame's headline
+
+
+def _layout(clip: dict, font: int, weight: int, box: float, W: int, H: int) -> dict:
+    """The clip with its words laid out again at `font` in a box `box` of the frame's width."""
+    import copy
+    out = copy.deepcopy(clip)
+    out.update(font_size=font, font_weight=weight, width=box, height=min(.9, max(.12, font * 1.45 * 6 / H)))
+    typography.reflow({"width": W, "height": H}, out, clip.get("font_family") or "Golos")
+    return out
+
+
+def text_design_changes(frame: dict, accent: str, size: tuple[int, int] = (1920, 1080)) -> list[dict]:
+    """A text frame with a lead-in and a key phrase (two text parts, the second going on the sentence in another colour)
+    designed as a headline: the lead-in small and quiet in two or three lines, the key phrase large in the accent colour
+    with a soft glow, a line growing from its middle under it when the voice says it, the whole stack in the middle of
+    the frame (user, 25 November 2026: «такі текстові вставки мають бути по дизайну в 100 раз крутіші бо зараз халтура»).
+    Returns batch actions; empty for a frame of another shape."""
+    texts = _composable(frame)
+    if not texts or len(texts) != 2:
+        return []
+    lead, key = sorted(texts, key=lambda c: _text_extent(c)[0])
+    if len(key.get("text_words") or []) > 5 or len(lead.get("text_words") or []) < len(key.get("text_words") or []):
+        return []
+    overlaid = _text_extent(key)[0] < _text_extent(lead)[1] - .01
+    if overlaid or any(str(c.get("title", "")).endswith(" лінія") for c in frame["clips"]):
+        return []
+    W, H = size
+    scale = H / 1080
+    lead_new = _layout(lead, round(LEAD_SIZE * scale), 600, .62, W, H)
+    color = key.get("color") if str(key.get("color") or "").startswith("#") and key.get("color") != "#ffffff" else accent
+    font = round(KEY_SIZE * scale)
+    while True:   # the key phrase on one line, as large as fits in 86% of the width
+        key_new = _layout(key, font, 800, .92, W, H)
+        if len({w["y"] for w in key_new["text_words"]}) == 1 or font <= 60 * scale:
+            break
+        font -= 4
+    lt, lb, _ = _text_extent({**lead_new, "y": .5})
+    kt, kb, _ = _text_extent({**key_new, "y": .5})
+    line_h, gap, under = .006, font * .32 / H, font * .2 / H
+    total = (lb - lt) + gap + (kb - kt) + under + line_h
+    top = .5 - total / 2
+    lead_y = .5 + (top - lt)
+    key_y = .5 + (top + (lb - lt) + gap - kt)
+    line_y = top + (lb - lt) + gap + (kb - kt) + under + line_h / 2
+    left, right = _letters_span({**key_new, "x": .5})
+    lead_x = .5 - (sum(_letters_span({**lead_new, "x": .5})) / 2 - .5)
+    key_x = .5 - ((left + right) / 2 - .5)
+    actions = [
+        {"type": "update_clip", "payload": {"clip_id": lead["id"], "changes": {
+            "x": round(lead_x, 5), "y": round(lead_y, 5), "width": lead_new["width"], "height": lead_new["height"],
+            "font_size": lead_new["font_size"], "font_weight": 600, "text_words": lead_new["text_words"], "opacity": .86,
+            "shadow": {"color": "#000000", "opacity": .55, "blur": 18, "x": 0, "y": 2}}}},
+        {"type": "update_clip", "payload": {"clip_id": key["id"], "changes": {
+            "x": round(key_x, 5), "y": round(key_y, 5), "width": key_new["width"], "height": key_new["height"],
+            "font_size": key_new["font_size"], "font_weight": 800, "text_words": key_new["text_words"], "color": color,
+            "shadow": {"color": color, "opacity": .5, "blur": 30, "x": 0, "y": 0}}}},
+    ]
+    said = float(key["start"]) + min(float(w.get("start", 0)) for w in key["text_words"])
+    start, end = float(frame["start"]), float(frame["end"])
+    at = max(0.0, min(said + .15, end - LAST_QUIET) - start)
+    # a clip is at least 1% of the frame high and scales from 5%: the line is drawn at 0.6 of a box 1% high (6 px at
+    # 1080) and grows from a dot in its middle to its whole width
+    full = .6
+    width = (right - left) * .82 / full
+    actions.append({"type": "add_clip", "payload": {
+        "layer_id": None, "kind": "animation", "content_type": "shape", "title": f"K{frame['number']:03d} лінія",
+        "color": color, "start": start, "duration": end - start, "x": .5, "y": round(line_y, 5),
+        "width": round(width, 5), "height": .01, "scale": full, "mask": "rounded", "corner_radius": 3,
+        "group_id": frame["group"]["id"], "easing": "ease_out",
+        "keyframes": [{"time": round(at, 3), "scale": .05, "opacity": 0.0}, {"time": round(at + .45, 3), "scale": full, "opacity": 1.0}]}})
+    return actions
+
+
+def design_text(ctx: Context, spec: dict) -> None:
+    """{"op": "design_text", "frames": [..] | absent for all}: text frames with a lead-in and a key phrase made into a
+    designed headline (text_design_changes)."""
+    wanted = spec.get("frames")
+    frames = [find_frame(ctx.frames, ref) for ref in wanted] if wanted else ctx.frames
+    accent = ctx.accent_color
+    for frame in frames:
+        actions = text_design_changes(frame, accent, (ctx.W, ctx.H))
+        for action in actions:
+            if action["type"] == "add_clip":
+                action["payload"]["layer_id"] = ctx.project["tracks"][-1]["id"]
+        ctx.actions.extend(actions)
+        if actions:
+            ctx.report.append(f"кадр {frame['number']}: заголовок — підводка, ключова фраза, лінія")
 
 
 def compose_text(ctx: Context, spec: dict) -> None:
@@ -1267,7 +1380,7 @@ def compose_text(ctx: Context, spec: dict) -> None:
     wanted = spec.get("frames")
     frames = [find_frame(ctx.frames, ref) for ref in wanted] if wanted else ctx.frames
     for frame in frames:
-        moves = text_layout_changes(frame)
+        moves = text_layout_changes(frame, (ctx.W, ctx.H))
         for clip, changes in moves:
             ctx.actions.append({"type": "update_clip", "payload": {"clip_id": clip["id"], "changes": changes}})
         if moves:
@@ -1539,7 +1652,7 @@ def motion_code_op(ctx: Context, spec: dict) -> None:
     ctx.report.append(f"кадр {frame['number']}: моушн-код «{label}» {start:.2f}–{start + duration:.2f} с")
 
 
-OPS = {"effect": effect, "transition_sounds": soundtrack.transitions, "typing_sounds": soundtrack.typing, "drawing_sounds": soundtrack.drawing, "appear_sounds": soundtrack.appear, "soundtrack": soundtrack.place, "animation": native_animation.place, "reglue": reglue, "reanimate": reglue, "animate_accents": reglue, "accent": accent, "clear_accents": clear_accents, "replace": replace, "transitions": transitions, "place": place, "remove": remove, "motion_code": motion_code_op, "compose_text": compose_text}
+OPS = {"effect": effect, "transition_sounds": soundtrack.transitions, "typing_sounds": soundtrack.typing, "drawing_sounds": soundtrack.drawing, "appear_sounds": soundtrack.appear, "soundtrack": soundtrack.place, "animation": native_animation.place, "reglue": reglue, "reanimate": reglue, "animate_accents": reglue, "accent": accent, "clear_accents": clear_accents, "replace": replace, "transitions": transitions, "place": place, "remove": remove, "motion_code": motion_code_op, "compose_text": compose_text, "design_text": design_text}
 
 
 def run(pid: str, ops: list, expected_revision=None, dry_run: bool = False) -> dict:

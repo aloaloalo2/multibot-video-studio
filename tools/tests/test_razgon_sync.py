@@ -63,6 +63,20 @@ class RazgonSyncTest(unittest.TestCase):
         self.assertFalse((self.copy / "tools" / "old.py").exists())
         self.assertFalse((self.copy / razgon_sync.MANIFEST).exists())
 
+    def test_props_are_collected_again_only_after_a_prop_changed(self):
+        (self.copy / "tools").mkdir()
+        runs = self.copy / "runs.txt"
+        (self.copy / "tools" / "library.py").write_text(f"open({str(runs)!r}, 'a').write('x')\n")
+        assets = self.copy / "projects" / "07" / "assets"
+        assets.mkdir()
+        (assets / "cup.png").write_bytes(b"png")
+        razgon_sync.collect_props(self.copy)
+        razgon_sync.collect_props(self.copy)
+        self.assertEqual(runs.read_text(), "x")             # nothing new: the second start does not hash 569 MB again
+        (assets / "pot.png").write_bytes(b"png2")
+        razgon_sync.collect_props(self.copy)
+        self.assertEqual(runs.read_text(), "xx")
+
     def test_working_copies_are_found_next_to_the_studio(self):
         self.assertEqual(razgon_sync.copies(self.copy.parents[1]), [self.copy])
 

@@ -57,5 +57,6 @@ function bindChannelTransfer(channel){
     const response=await fetch(base+'/settings-import',{method:'POST',headers:{'Content-Type':'application/zip'},body:file});const result=await response.json();
     if(!response.ok)throw new Error(result.error||'Не вдалося перенести налаштування');await refreshChannel(result);
   }));
-  backups().catch(error=>feedback(error.message,true));
+  // the backups list is read when «Перенесення каналу» is first opened, not on every opening of the settings
+  group.addEventListener('toggle',()=>{if(group.open&&!group.dataset.loaded){group.dataset.loaded='1';backups().catch(error=>feedback(error.message,true));}});
 }

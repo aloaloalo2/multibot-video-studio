@@ -28,12 +28,6 @@ def kick() -> None:
     WAKE.set()
 
 
-def _saved_since(cid: str, flag: str) -> float | None:
-    """The moment the channel's box was seen on, without writing it (for the project list)."""
-    row = (store.read_json(store.DATA_ROOT / STATE, {}) or {}).get(cid) or {}
-    return row.get(flag)
-
-
 def due(project: dict, settings: dict, exported: float, since: dict) -> str | None:
     """«export» or «publish» when the channel's automation is about to do that step for this episode, else None. The
     card shows that step as coming instead of a button the author might press meanwhile. `since` holds the moments the
@@ -59,7 +53,11 @@ def due(project: dict, settings: dict, exported: float, since: dict) -> str | No
 def listed(item: dict, project: dict, settings: dict) -> str | None:
     """due() for the project list, reading the switch-on moments without writing them."""
     cid = item.get("channel_id")
-    since = {flag: (_saved_since(cid, flag) if settings.get(flag) is True else None) for flag in ("auto_export", "auto_publish")}
+    flags = [flag for flag in ("auto_export", "auto_publish") if settings.get(flag) is True]
+    if not flags:
+        return None
+    row = (store.read_json(store.DATA_ROOT / STATE, {}) or {}).get(cid) or {}
+    since = {flag: (row.get(flag) if flag in flags else None) for flag in ("auto_export", "auto_publish")}
     if since["auto_export"] is None and since["auto_publish"] is None:
         return None
     return due(project, settings, float(item.get("last_export_at") or 0), since)
@@ -90,35 +88,44 @@ def _busy(pid: str, active_export) -> bool:
 
 
 def tick(start_export, active_export) -> list[str]:
+    """One round over the episodes of the channels with a box on. Each project.json is read through the list's cache
+    (store.listed_project, parsed once per version of the file) and the conditions are due()'s own; the whole project
+    is loaded only for an episode about to export (it used to load every episode of those channels every minute:
+    39 projects, 16 MB of JSON, about 1.2 s of parsing a round)."""
     import completion_notices
     import published
-    done = []
+    done, channels = [], {}
     for channel in store.list_channels():
         cid = channel.get("id")
         try:
             settings = store.read_channel_settings(store.get_channel_folder(cid), {}) or {}
         except (store.StudioError, OSError):
             continue
-        export_since = _since(cid, "auto_export", settings.get("auto_export") is True)
-        publish_since = _since(cid, "auto_publish", settings.get("auto_publish") is True)
-        if export_since is None and publish_since is None:
+        since = {flag: _since(cid, flag, settings.get(flag) is True) for flag in ("auto_export", "auto_publish")}
+        if since["auto_export"] is not None or since["auto_publish"] is not None:
+            channels[cid] = (settings, since)
+    if not channels or not store.PROJECTS_ROOT.is_dir():
+        return done
+    for path in store.PROJECTS_ROOT.glob("*/project.json"):
+        try:
+            item = store.listed_project(path)
+        except (OSError, ValueError, KeyError, TypeError, AttributeError, store.StudioError):
             continue
-        for item in store.list_projects(cid):
-            pid = item["id"]
+        if item.get("deleted_at") or item.get("channel_id") not in channels or not item.get("id"):
+            continue
+        settings, since = channels[item["channel_id"]]
+        pid = item["id"]
+        folder = store.project_dir(pid)
+        exported = float(((store.read_json(completion_notices.path(pid), {}) or {}).get("export") or {}).get("at") or 0)
+        # each step on its own, as before: a new frame run may export while the previous export goes to YouTube
+        if (due(item, settings, exported, {"auto_export": since["auto_export"]}) == "export"
+                and not _busy(pid, active_export)):
             try:
                 project = store.load_project(pid)
             except store.StudioError:
-                continue
-            if project.get("deleted_at"):
-                continue
-            folder = store.project_dir(pid)
-            exported = float(((store.read_json(completion_notices.path(pid), {}) or {}).get("export") or {}).get("at") or 0)
-            request = project.get("production_request") or {}
-            finished = float(request.get("finished_at") or 0)
-            if (export_since is not None and request.get("status") == "done" and (request.get("quality") or {}).get("passed") is not False
-                    and finished > export_since and exported < finished
-                    and (store.read_json(folder / "auto-export.json", {}) or {}).get("request") != request.get("id")
-                    and not _busy(pid, active_export) and store.plan_readiness(project).get("export_ready")):
+                project = None
+            if project and store.plan_readiness(project).get("export_ready"):
+                request = project.get("production_request") or {}
                 quality = settings.get("video_quality") if settings.get("video_quality") in store.VIDEO_QUALITIES else "standard"
                 choices = store.video_bitrates(int(project.get("width") or 1920), int(project.get("height") or 1080), int(project.get("fps") or 25))
                 store.atomic_json(folder / "auto-export.json", {"request": request.get("id"), "at": time.time()})
@@ -127,17 +134,14 @@ def tick(start_export, active_export) -> list[str]:
                     done.append(f"export {pid}")
                 except store.StudioError as error:
                     store.atomic_json(folder / "auto-export.json", {"request": request.get("id"), "at": time.time(), "error": str(error)})
-            mark = store.read_json(published.path(pid), {}) or {}
-            if (publish_since is not None and exported > publish_since and not mark.get("at")
-                    and published.publishing({**item, "published": mark}) is None
-                    and float((store.read_json(folder / "auto-publish.json", {}) or {}).get("export_at") or 0) < exported
-                    and not active_export(pid)):
-                store.atomic_json(folder / "auto-publish.json", {"export_at": exported, "at": time.time()})
-                try:
-                    published.enqueue(pid)
-                    done.append(f"publish {pid}")
-                except store.StudioError:
-                    pass
+        if (due(item, settings, exported, {"auto_publish": since["auto_publish"]}) == "publish"
+                and not active_export(pid)):
+            store.atomic_json(folder / "auto-publish.json", {"export_at": exported, "at": time.time()})
+            try:
+                published.enqueue(pid)
+                done.append(f"publish {pid}")
+            except store.StudioError:
+                pass
     return done
 
 

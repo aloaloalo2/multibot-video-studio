@@ -69,7 +69,10 @@ class NarrationConcurrencyTests(unittest.TestCase):
     def worker(self, **kwargs):
         worker = Thread(**kwargs)
         worker.job = kwargs.get('target')
-        self.workers.append(worker)
+        # threading.Thread is patched for the whole module, so a phrase pool's own threads come here too: only the
+        # narration workers are the test's to join
+        if getattr(worker.job, '__module__', '') != 'concurrent.futures.thread':
+            self.workers.append(worker)
         return worker
 
     def wait_for_users(self, path, count):
@@ -177,7 +180,7 @@ class NarrationConcurrencyTests(unittest.TestCase):
         self.assertEqual([job['status'] for job in jobs], ['done', 'done'])
         paid.assert_called_once()
         amounts = [sum(row['amount'] for row in store.read_json(self.project_dir(pid) / 'project-costs.json')['events'].values()) for pid in self.projects]
-        self.assertAlmostEqual(sum(amounts), len(text) * 30 / 1_000_000)
+        self.assertAlmostEqual(sum(amounts), len(text) * lab.heygen_voice.RATES['heygen-voice-1'])
         self.assertEqual(sum(amount > 0 for amount in amounts), 1)
 
     def test_each_explicit_queued_project_attempts_its_failed_phrase_once(self):
@@ -192,8 +195,11 @@ class NarrationConcurrencyTests(unittest.TestCase):
             first, second = self.projects.values()
             narration.start(first, text)
             self.assertTrue(entered.wait(5))
-            narration.start(second, text)
             self.release.set()
+            # the second start comes after the first failed: a waiter that overlaps the failing take shares its error
+            # (lab.audio_guard), so the old order raced between one and two calls
+            self.workers[-1].join(5)
+            narration.start(second, text)
             jobs = self.finished()
         self.assertEqual(paid.call_count,2)
         self.assertEqual([job['status'] for job in jobs], ['failed', 'failed'])

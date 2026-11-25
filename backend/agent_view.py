@@ -188,7 +188,7 @@ def project_summary(project: dict, readiness: dict | None = None, plan: dict | N
                         and float(c["start"]) <= spoken + .5 for c in frame["clips"])
             if shown and not drawn and min(shown) - spoken > 1.6:
                 problems.append(f"текстовий кадр без тексту {min(shown) - spoken:.1f} с, хоча голос уже говорить")
-            if montage_ops.text_layout_changes(frame):
+            if montage_ops.text_layout_changes(frame, (int(project.get("width") or 1920), int(project.get("height") or 1080))):
                 # its words stand off the middle or apart from one another (Andromeda 40, 25 November 2026)
                 problems.append("текст розкиданий, не одним блоком по центру (compose_text збирає)")
         join = joins_by_from.get("group:" + frame["group"]["id"])
