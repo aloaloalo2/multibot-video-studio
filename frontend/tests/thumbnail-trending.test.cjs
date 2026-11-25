@@ -4,7 +4,9 @@ const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
 const source=fs.readFileSync(path.join(__dirname,'..','thumbnail.js'),'utf8');
-const open=source.slice(source.indexOf('function thumbnailWriterOptions('),source.indexOf('function showThumbnailState('));
+// styleStrip draws the channel's own thumbnails beside «Адаптувати під мій стиль» (4a80fab)
+const strip=source.slice(source.indexOf('function styleStrip('),source.indexOf('\n',source.indexOf('function styleStrip(')));
+const open=strip+'\n'+source.slice(source.indexOf('function thumbnailWriterOptions('),source.indexOf('function showThumbnailState('));
 const generation="const thumbnailCreatePending=new Set();if(typeof thumbnailRuns==='undefined')globalThis.thumbnailRuns=new Map();if(typeof thumbnailBusy==='undefined')globalThis.thumbnailBusy=id=>thumbnailRuns.get(id)?.status==='running';if(typeof showThumbnailState==='undefined')globalThis.showThumbnailState=()=>{};\n"+source.slice(source.indexOf('async function generateThumbnail('),source.indexOf('// While a thumbnail is made'));
 
 test('one create action uses the remembered writer while preserving each project wishes',async()=>{
@@ -13,13 +15,13 @@ test('one create action uses the remembered writer while preserving each project
   const button={dataset:{},classList:{add(){}},querySelector:()=>({})},footer={append(){},prepend(){},querySelector:()=>button};
   const c=vm.createContext({state:{},api:async url=>({title:'¿Qué pasaría?',script:'Texto español.',job:saved[url.split('/')[3]]}),thumbnailRuns:new Map(),thumbnailSources:new Map(),
     thumbnailIcon:'<svg/>',modal:(title,body,buttons)=>{heading=title;html=body;actions=buttons;},$:id=>id==='modal-actions'?footer:{value:'Make the face large',dataset:{},classList:{add(){}},closest(){return this;}},esc:s=>s,
-    document:{createElement:()=>({append(){}}),querySelector:()=>null},showThumbnailState(){},thumbnailBusy:()=>false,
+    document:{createElement:()=>({append(){}}),querySelector:()=>null,querySelectorAll:()=>[]},showThumbnailState(){},thumbnailBusy:()=>false,
     localStorage:{getItem:key=>preferences.get(key),setItem:(key,value)=>preferences.set(key,value)},captureChoice:(root,options)=>{choice=options;},
     generateThumbnail:(...args)=>calls.push(args),status(){}});
   const ui=vm.runInContext(fs.readFileSync(path.join(__dirname,'..','ui-controls.js'),'utf8')+'\nStudioUI;',vm.createContext({localStorage:c.localStorage}));
   c.StudioUI={...ui,choice:c.captureChoice};
   vm.runInContext(open,c);await c.openThumbnail({id:'p',channel_id:'c'});
-  assert.deepEqual(Array.from(choice.items,item=>item.label),['Codex','Claude']);
+  assert.deepEqual(Array.from(choice.items,item=>item.label),['Codex','Claude','Claude + OpenRouter']); // OpenRouter drawing in beta (038c028)
   assert.equal(choice.value,'claude');
   assert.equal(heading,'Нове прев’ю');assert.equal(actions.length,1);assert.equal(actions[0].label,'Створити');assert.equal(actions[0].primary,true);
   const wishes=()=>html.match(/id="thumb-create-wishes"[^>]*>([\s\S]*?)<\/textarea>/)[1];

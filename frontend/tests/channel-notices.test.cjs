@@ -4,7 +4,7 @@ function fixture(){
  const badge={setAttribute(key,value){this[key]=value;}},count={},storage={};
  // the channel button holds the spinner slot and, since 5b2da23, a count of its working episodes beside it
  const button={dataset:{channelId:'one'},querySelector:selector=>selector==='.channel-busy'?badge:selector==='.channel-count'?count:null};
- const context={state:{view:'editor',channel:null},channelActivity:new Set(),channelExporting:new Set(),channelProjectCounts:{},channelWork:{},document:{querySelectorAll:()=>[button]},StudioUI:{icon:name=>`<svg>${name}</svg>`},localStorage:{getItem:()=>null,setItem:(key,value)=>storage[key]=value}};
+ const context={state:{view:'editor',channel:null},channelActivity:new Set(),channelExporting:new Set(),channelPublishing:new Set(),channelProjectCounts:{},channelWork:{},document:{querySelectorAll:()=>[button]},StudioUI:{icon:name=>`<svg>${name}</svg>`},localStorage:{getItem:()=>null,setItem:(key,value)=>storage[key]=value}};
  vm.createContext(context);
  vm.runInContext(source.slice(source.indexOf('const channelNoticeStorage='),source.indexOf('let channelActivityPending=')),context);
  return {context,badge,count,storage,run:code=>vm.runInContext(code,context)};

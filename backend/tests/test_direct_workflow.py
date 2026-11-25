@@ -76,10 +76,20 @@ class DirectWorkflowTest(unittest.TestCase):
 
     def test_project_kind_uses_channel_default_only_at_creation(self):
         self.assertFalse(store.project_animated(self.project))
+        # an episode with frame work keeps its kind; an untouched one follows the channel (store.follow_channel_kind,
+        # user 17 November 2026)
+        path = store.project_dir(self.pid) / 'project.json'
+        saved = store.read_json(path, {}); saved['production_request'] = {'status': 'done', 'frames': 3}
+        store.atomic_json(path, saved)
+        untouched = store.create_project(self.cid, 'Untouched episode')
         store.update_channel_settings(self.cid, {'channel_kind':'animated'})
         animated = store.create_project(self.cid, 'Animated episode')
         self.assertTrue(store.project_animated(animated))
         self.assertFalse(store.project_animated(store.load_project(self.pid)))
+        self.assertTrue(store.project_animated(store.load_project(untouched['id'])))
+        path = store.project_dir(animated['id']) / 'project.json'
+        saved = store.read_json(path, {}); saved['production_request'] = {'status': 'done', 'frames': 3}
+        store.atomic_json(path, saved)
         store.update_channel_settings(self.cid, {'channel_kind':'regular'})
         self.assertTrue(store.project_animated(store.load_project(animated['id'])))
 

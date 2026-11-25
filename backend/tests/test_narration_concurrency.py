@@ -152,8 +152,9 @@ class NarrationConcurrencyTests(unittest.TestCase):
             (narration.root(project['id']) / (entry['key'] + '.mp3')).write_bytes(entry['text'].encode())
         with patch.object(lab.heygen_voice, 'synthesize') as paid:
             narration.start(project, text)
-            self.workers[-1].join(5)
-        self.assertFalse(self.workers[-1].is_alive())
+            for worker in self.workers:   # the narration may hand off to further threads (closing pause, next stage)
+                worker.join(5)
+        self.assertFalse(any(worker.is_alive() for worker in self.workers))
         job = store.read_json(narration.root(project['id']) / 'job.json')
         self.assertEqual(job['status'], 'done', job.get('error'))
         listing = (narration.root(project['id']) / 'concat.txt').read_text().splitlines()

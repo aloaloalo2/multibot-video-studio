@@ -17,7 +17,7 @@ class DescribeTest(unittest.TestCase):
 
     def test_the_thumbnail_is_read_once_and_kept(self):
         answer = {"result": '{"text": "", "shows": "a hand holding an aloe leaf", "subject": "aloe for joints"}'}
-        run = SimpleNamespace(stdout=json.dumps(answer))
+        run = SimpleNamespace(stdout=json.dumps(answer), returncode=0)   # director.run_json reads the exit code too
         with patch.object(idea_reference.subprocess, "run", return_value=run) as call:
             first = idea_reference.describe("c", "abcdefghijk")
             again = idea_reference.describe("c", "abcdefghijk")
@@ -26,7 +26,7 @@ class DescribeTest(unittest.TestCase):
         self.assertEqual(first, again)
 
     def test_an_unreadable_answer_gives_nothing(self):
-        with patch.object(idea_reference.subprocess, "run", return_value=SimpleNamespace(stdout="not json")):
+        with patch.object(idea_reference.subprocess, "run", return_value=SimpleNamespace(stdout="not json", returncode=0)):
             self.assertIsNone(idea_reference.describe("c", "abcdefghijk"))
 
 

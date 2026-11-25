@@ -113,7 +113,8 @@ class SafetyRetryTest(unittest.TestCase):
              mock.patch.object(episode_ideas.time, 'sleep'):
             with self.assertRaises(RuntimeError) as error:
                 episode_ideas.opus('p', None, 'edit-y', 'c', session=dict(session), resume=True)
-        self.assertEqual(runs.call_count, episode_ideas.LOST_RETRIES + 1)   # several drops in a row are retried
+        # two drops in the author's session move to a fresh session, which also gets one more try (19 November 2026)
+        self.assertEqual(runs.call_count, 2 * (episode_ideas.LOST_RETRIES + 1))
         self.assertIn("обривалось", str(error.exception))
 
     def test_the_writer_gets_no_model_routing_sections(self):

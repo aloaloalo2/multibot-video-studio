@@ -6,22 +6,25 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const deferred=()=>{let resolve,reject;return {promise:new Promise((r,j)=>{resolve=r;reject=j;}),resolve:value=>resolve(value),reject:error=>reject(error)};};
 function harness({submitReply,recommendation}={}){
   // «Адаптувати під мій стиль» (use_wishes) sits in its own label beside the host choice (cfb60a4)
-  const heroLabel={title:'',hidden:false},wishesLabel={title:'',hidden:true};
-  const fields={channel:{value:'own',disabled:false},title:{value:'Exact competitor title',disabled:false},words:{value:'2000',disabled:false},use_thumbnail:{checked:true,disabled:false},
+  const heroLabel={title:'',hidden:false},wishesLabel={title:'',hidden:true},wordsLabel={hidden:false};
+  // the rest of the form: the title's language chip, the competitor's caption, the host avatar and our style thumbnails
+  const parts={'.trend-idea-rest':{hidden:false},'.trend-title-original':{replaceChildren(){},append(){}},'.trend-title-flag':{},'.trend-hero-avatar':{},'.trend-style-strip':{}};
+  const fields={channel:{value:'own',disabled:false},title:{value:'Exact competitor title',disabled:false,addEventListener(){}},words:{value:'2000',disabled:false,closest:()=>wordsLabel},use_thumbnail:{checked:true,disabled:false},
     use_hero:{checked:true,disabled:false,closest:()=>heroLabel},use_wishes:{checked:false,disabled:false,closest:()=>wishesLabel}};
   const note={hidden:true,textContent:''},button={disabled:false},calls=[],navigations=[];
-  const root={isConnected:true,querySelector:selector=>selector==='.trend-idea-feedback'?note:selector==='[data-wishes-choice]'?wishesLabel:fields[selector.match(/name="([^"]+)"/)[1]],querySelectorAll:()=>Object.values(fields)};
+  const root={isConnected:true,querySelector:selector=>selector==='.trend-idea-feedback'?note:selector==='[data-wishes-choice]'?wishesLabel:parts[selector]||fields[selector.match(/name="([^"]+)"/)[1]],querySelectorAll:()=>Object.values(fields)};
   const state={channels:[{id:'own',name:'Our channel',hero_reference:{url:'/host.png'}},{id:'other',name:'Other'}],navigation:3,modalGeneration:0};
-  const elements={'modal-backdrop':{hidden:false},'modal-body':{querySelector:()=>root},'modal-actions':{querySelector:()=>button}};
+  const elements={'modal-backdrop':{hidden:false},'modal-body':{querySelector:()=>root},'modal-actions':{querySelector:()=>button,prepend(){}}};
   const h={fields,note,button,calls,navigations,root,state,heroLabel,wishesLabel,action:null,html:'',used:[],pickers:[]};
-  const context=vm.createContext({state,bindTitleTranslation:(input,options)=>{h.translation=options;return {refresh(){},dispose(){}};},crypto:{randomUUID:()=> 'stable-request-id'},esc:String,$:id=>elements[id],modal:(title,html,actions)=>{state.modalGeneration++;h.html=html;h.action=actions[0];},closeModal:()=>{state.modalGeneration++;root.isConnected=false;},api:async(path,method='GET',body)=>{
+  const context=vm.createContext({state,bindTitleTranslation:(input,options)=>{h.translation=options;return {refresh(){},dispose(){},translate:async()=>{}};},crypto:{randomUUID:()=> 'stable-request-id'},esc:String,$:id=>elements[id],modal:(title,html,actions)=>{state.modalGeneration++;h.html=html;h.action=actions[0];},closeModal:()=>{state.modalGeneration++;root.isConnected=false;},api:async(path,method='GET',body)=>{
     calls.push({path,method,body});
     if(path==='/api/health')return {trending_use_idea:true};
     if(method==='POST')return submitReply?submitReply.promise:{project_id:'project'};
     return recommendation?recommendation.promise:{target_words:1350};
   },selectChannel:async id=>{navigations.push(['channel',id]);return true;},selectProject:async id=>navigations.push(['project',id]),
     // the channel select is a picture dropdown with the channels' logos (60c8922)
-    StudioUI:{picker:(select,options)=>h.pickers.push({select,options})},channelIdentityIcon:channel=>`<i>${channel?.id}</i>`});
+    StudioUI:{picker:(select,options)=>h.pickers.push({select,options})},channelIdentityIcon:channel=>`<i>${channel?.id}</i>`,
+    heroAvatar:()=>'',styleStrip:()=>'',titleTranslationOptions:async()=>({channels:{}}),document:{createElement:()=>({append(){}})}});
   vm.runInContext(source.slice(source.indexOf('function openTrendingIdea')),context);
   h.open=()=>context.openTrendingIdea({id:'abcdefghijk',title:'Exact competitor title',title_uk:'Український заголовок',for_channels:[{id:'own'}]},'own',()=>h.used.push('abcdefghijk'));
   return h;
