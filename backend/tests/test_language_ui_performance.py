@@ -24,6 +24,32 @@ class LanguageUIReadsTest(unittest.TestCase):
         self.assertEqual(result['items'][0]['made_at'],12)
         self.assertNotIn('text',result['items'][0])
 
+    def test_one_view_loads_a_project_once_and_sees_a_changed_project(self):
+        # the overview asked for the project about twenty times, each re-anchoring the timeline's joins
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'project.json';path.write_text('{}')
+            with patch.object(store,'project_path',return_value=path), \
+                 patch.object(store,'load_project',side_effect=lambda pid:{'id':pid}) as load:
+                with languages.project_reads():
+                    first=languages.project_for('p')
+                    self.assertIs(languages.project_for('p'),first)
+                    self.assertEqual(load.call_count,1)
+                    path.write_text('{"changed": true}')
+                    languages.project_for('p')
+                    self.assertEqual(load.call_count,2)
+                languages.project_for('p');languages.project_for('p')
+                self.assertEqual(load.call_count,4)
+
+    def test_view_memo_reuses_examples_and_settings_only_inside_a_view(self):
+        calls=[]
+        compute=lambda:calls.append(1) or len(calls)
+        self.assertEqual(languages.view_memo(lambda:('k',),compute),1)
+        self.assertEqual(languages.view_memo(lambda:('k',),compute),2)
+        with languages.project_reads():
+            self.assertEqual(languages.view_memo(lambda:('k',),compute),3)
+            self.assertEqual(languages.view_memo(lambda:('k',),compute),3)
+            self.assertEqual(languages.view_memo(('other',),compute),4)
+
     def test_language_check_cache_is_invalidated_by_exact_text(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(languages,'work_dir',return_value=Path(tmp)):
             with patch.object(languages.language_quality,'check',return_value={'version':languages.language_quality.VERSION,'target':'uk','state':'ok'}) as check:
