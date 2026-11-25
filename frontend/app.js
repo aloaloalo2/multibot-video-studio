@@ -197,7 +197,9 @@ async function loadChannels(preferred,{restoreLocation=false}={}) {
   if(restoreLocation){
     if(restoreProject){
       if(!await selectProject(route.projectId,{updateUrl:false,view:route.view}))return;
-      refreshProjects().catch(error=>console.warn('Не вдалося оновити список випусків',error));
+      // the list for the way back, read once the episode's own reads are done: it no longer competes with them
+      const navigation=state.navigation;
+      setTimeout(()=>{if(state.navigation===navigation)refreshProjects().catch(error=>console.warn('Не вдалося оновити список випусків',error));},3000);
     }
     syncRoute(true);
   }
@@ -419,19 +421,6 @@ function projectActions(project,current=()=>project){
   return actions;
 }
 
-// «Опублікувати» (user, 19 November 2026: «я нажав і воно почало працювати»): the episode goes into the studio's queue;
-// the publishing Claude session listens with tools/youtube_publish.py wait and starts at once in the built-in browser
-// (docs/YOUTUBE_PUBLISH.md). The card reads «У черзі на публікацію», then «Публікація», then the blue check.
-// «Опублікувати» (user, 19 November 2026: «я нажав і воно почало працювати»): the episode goes into the studio's queue;
-// the publishing Claude session listens with tools/youtube_publish.py wait and starts at once in the built-in browser
-// (docs/YOUTUBE_PUBLISH.md). The card reads «У черзі на публікацію», then «Публікація», then the blue check.
-// The task for a new Claude Code session: publish this episode, then wait for the next ones
-function youtubeSessionTask(project,root){
-  return `Опублікуй на YouTube випуски з черги студії по одному, першим «${project.name}» (проєкт студії ${project.id}). `
-    +`Порядок і правила: ${root}/docs/YOUTUBE_PUBLISH.md, інструмент: python3 "${root}/tools/youtube_publish.py". `
-    +'Якщо цей випуск уже є в «Контенті» каналу чернеткою, продовж її: коли вона просить файл, завантаж у неї той самий ролик знову, і YouTube підхопить чернетку. '
-    +'Після публікації стань сесією публікації: запусти у фоні (Bash, run_in_background) wait і, коли він закінчиться, публікуй наступний випуск з черги так само.';
-}
 // «Опублікувати» (user, 19 November 2026: «я нажав і воно почало працювати», «створюється нова сесія і все»): the
 // episode goes into the studio's queue. A publishing session that already waits (tools/youtube_publish.py wait) takes it
 // in a few seconds; with none on this Mac the button opens a new Claude Code session with the task filled in
@@ -551,14 +540,18 @@ async function selectProject(id,{updateUrl=true,view='editor'}={}) {
     state.analysis=analysis;
     if(state.view==='editor'){delete $('editor-production').dataset.planKey;renderMontageMake();}
   }).catch(error=>console.warn('Не вдалося завантажити аналіз озвучки',error));
-  let exportWatchBusy=false;   // one read at a time: on a slow server the reads piled up (17 November 2026 audit)
-  state.exportWatch=setInterval(async()=>{
-    if(!state.project || state.project.id!==id || exportIsActive() || exportWatchBusy)return;
+  // one read at a time: on a slow server the reads piled up (17 November 2026 audit). A hidden tab reads nothing and
+  // catches up when it shows again; the logo is asked every third tick, since the server loads the whole project for it
+  // (25 November 2026 audit: 0.3-0.4 s of the server's time every 10 s on Andromeda)
+  let exportWatchBusy=false,exportWatchTicks=0;
+  const exportWatchTick=async(branding=++exportWatchTicks%3===0)=>{
+    if(document.hidden || !state.project || state.project.id!==id || exportIsActive() || exportWatchBusy)return;
     exportWatchBusy=true;
     try{
       const result=await api(`/api/projects/${encodeURIComponent(id)}/export/active`);
       if(state.project?.id!==id)return;
       if(result.job){state.job=result.job;updateExportLock();pollJob();return;}
+      if(!branding)return;
       const revision=state.project.revision;
       const branding=await api(`/api/projects/${encodeURIComponent(id)}/branding?version=${encodeURIComponent(state.project.branding_version||'')}`);
       if(!branding.project || state.project?.id!==id || state.project.revision!==revision || exportIsActive())return;
@@ -570,7 +563,8 @@ async function selectProject(id,{updateUrl=true,view='editor'}={}) {
       renderPreview();renderTimeline();
     }catch(error){console.warn('Не вдалося оновити стан проєкту',error);}
     finally{exportWatchBusy=false;}
-  },10000);
+  };
+  state.exportWatch=setInterval(exportWatchTick,10000);state.exportWatchTick=exportWatchTick;
   return true;
 }
 
@@ -805,9 +799,9 @@ setInterval(()=>{
 // a step the automation is about to take: the card is read every 2 s until the export or the publication shows up
 setInterval(()=>{
   if(state.project || !state.channel || document.hidden || !state.projects.some(project=>project.auto_due))return;
-  refreshProjects().then(()=>pollOverviewExports(true)).catch(()=>{});
+  refreshProjects().catch(()=>{});   // renderOverview reads the exports too
 },2000);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden){pollOverviewExports();if(!state.project&&state.channel)refreshProjects().catch(()=>{});}});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){pollOverviewExports();if(!state.project&&state.channel)refreshProjects().catch(()=>{});if(state.project&&state.exportWatch)state.exportWatchTick?.(true);if(state.poll)scheduleJobPoll(0);}});
 
 function scenes() {return Array.isArray(state.project?.scenes) ? [...state.project.scenes].sort((a,b)=>seconds(a.start)-seconds(b.start)) : [];}
 function allTracks() {return Array.isArray(state.project?.tracks) ? state.project.tracks : [];}
@@ -970,7 +964,7 @@ function renderProject() {
   if(typeof renderThumbView==='function')renderThumbView();
   if(typeof renderLangView==='function')renderLangView();
   if(state.project && state.view==='agent' && typeof renderAgent==='function')renderAgent();
-  renderOverview();
+  if(!state.project)renderOverview();   // the overview is hidden under an open episode: drawn again on the way back
   $('view-editor').disabled=!!state.project && !editorUnlocked();
   $('view-editor').title=$('view-editor').disabled?editorLockedHint:'';
   $('export-open').disabled=!state.project;$('export-open').title=state.project?.production?.reason || ''; $('undo').disabled=!state.project?.can_undo; $('redo').disabled=!state.project?.can_redo;
@@ -1879,7 +1873,7 @@ function revealTimelineTime(time){
 // One request at a time, the next one 1.5 s after the answer: a busy export no longer piles requests up, and a lost
 // answer retries (slower each time) instead of freezing the progress with the episode locked.
 let jobPollInFlight=false,jobPollFailures=0;
-function scheduleJobPoll(delay=1500){if(state.poll)clearTimeout(state.poll);state.poll=setTimeout(()=>{state.poll=null;pollJob();},delay);}
+function scheduleJobPoll(delay=1500){if(delay>0&&document.hidden)delay=Math.max(delay,5000);if(state.poll)clearTimeout(state.poll);state.poll=setTimeout(()=>{state.poll=null;pollJob();},delay);}
 async function pollJob(){
   if(!state.job || jobPollInFlight)return;
   const jobId=state.job.id;jobPollInFlight=true;
