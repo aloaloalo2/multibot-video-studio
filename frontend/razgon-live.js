@@ -40,7 +40,7 @@
   const source = () => `${info().url}?embed=1&scale=${scale}`;
   // the live frame comes into view only with its own moment on the canvas (user, 25 November 2026: «з другого на третій
   // кадр… пригає на якийсь… кадр посередині… а потім… початок»): after a jump of time it waits for the page's «drawn»
-  let drawnAt = null, waitingFor = null, waitTimer = null, wasOn = false, lastT = null;
+  let drawnAt = null, waitingFor = null, waitTimer = null, wasOn = false, lastT = null, lastFrame = null;
   const reveal = () => { if (waitingFor === null && frame.dataset.wantVisible === '1') frame.style.visibility = ''; };
   let seekTime = null;   // the Razgon time the picture shows: the playhead, or a frame's last moment while a transition fades out of it
   // one drawing a frame of the film, on the export's own moment f/fps: the playback asked for one every screen refresh
@@ -208,8 +208,12 @@
     seekTime = sourceFrame ? sourceFrame.sourceStart + (t - sourceFrame.start) : null;
     seekWithin = sourceFrame ? [sourceFrame.sourceStart, sourceFrame.sourceEnd] : null;   // always the frame's own shots and words
     const on = active() && (!own || !!inside || !!fading) && seen(fading ? fading.end - 0.01 : t);
-    const jumped = on && (!wasOn || lastT === null || Math.abs(t - lastT) > .25);
-    wasOn = on; lastT = t;
+    // a jump hides the player only when it comes from another frame, whose picture it still holds; inside one Razgon
+    // frame the last picture stays until the new moment is drawn (user, 26 November 2026: dragging the playhead over
+    // Antropov's frame 22 «блимає… чорний… на мілісекунду»: every step of the drag hid the player and showed black)
+    const frameKey = sourceFrame ? `${sourceFrame.sourceStart}|${sourceFrame.sourceEnd}` : null;   // the model is rebuilt each draw
+    const jumped = on && (!wasOn || lastT === null || (Math.abs(t - lastT) > .25 && frameKey !== lastFrame));
+    wasOn = on; lastT = t; lastFrame = frameKey;
     content.classList.toggle('razgon-live-on', on); note.style.visibility = on ? '' : 'hidden';
     frame.dataset.wantVisible = on ? '1' : '';
     if (!on) { frame.style.visibility = 'hidden'; waitingFor = null; clearTimeout(waitTimer);
