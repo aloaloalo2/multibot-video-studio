@@ -23,6 +23,24 @@ HOST_MAX_SECONDS = 3.0    # a host frame on the voice's own times (Avatar III re
 HOST_SECONDS_SLACK = .5   # «орієнтовно до 3 секунд»
 
 
+def kept_host_frames(project: dict) -> list[list[int]]:
+    """The sentence numbers of every host frame whose HeyGen video already stands on the timeline: a new direction keeps
+    them as they are, so the host is never filmed again (user, 26 November 2026: «перероби цей проект… не генеруй заново
+    ведучого»)."""
+    try:
+        plan = store.load_project_plan(project["id"]) or {}
+        made = set(store.made_frames(project, plan))
+    except (store.StudioError, OSError, KeyError):
+        return []
+    kept, first = [], 1
+    for frame in plan.get("frames") or []:
+        count = len(frame.get("sentences") or [])
+        if frame.get("format") == "host" and frame.get("number") in made and count:
+            kept.append(list(range(first, first + count)))
+        first += count
+    return kept
+
+
 def avatar_iv_first(project: dict) -> bool:
     """The channel makes its first host frame with Avatar IV, which the author is happy with at any length."""
     try:
@@ -147,6 +165,7 @@ def sentences(pid: str) -> dict:
             "host_rules": {"first_frame": bool(rules) and rules[0] == "host", "last_frame": not (ending or [None])[-1], "no_consecutive": True,
                            "good_words": HOST_GOOD_WORDS, "max_words": HOST_MAX_WORDS, "max_seconds": HOST_MAX_SECONDS,
                            "avatar_iv_first": avatar_iv_first(project), "share_is_ceiling": True,
+                           "kept_frames": kept_host_frames(project),
                            "even_distribution": True} if settings.get("host_even_distribution") else None}
 
 
@@ -195,6 +214,12 @@ def apply(pid: str, frames, dry_run: bool = False) -> dict:
         index = len(kinds) - len(ending) + offset
         if wanted and 0 <= index < len(kinds) and kinds[index] != wanted:
             problems.append(f"Кадр {index + 1} за кінцем ролика в налаштуваннях каналу має бути «{labels.get(wanted, wanted)}»")
+    planned = {tuple(group): kind for group, kind in zip(groups, kinds)}
+    keep = kept_host_frames(project)
+    for group in keep:
+        if planned.get(tuple(group)) != "host":
+            problems.append(f"Кадр ведучого з реченнями {group[0]}–{group[-1]} уже знятий у HeyGen і стоїть на таймлайні: лиши його "
+                            f"окремим кадром host із тими самими реченнями")
     run = 1
     for index in range(1, len(kinds)):
         run = run + 1 if kinds[index] == kinds[index - 1] else 1
@@ -216,8 +241,9 @@ def apply(pid: str, frames, dry_run: bool = False) -> dict:
     if "host" in targets:
         estimated = (plan.get("timing") or {}).get("status") == "script_estimate"
         free = next((i for i, kind in enumerate(kinds) if kind == "host"), None) if avatar_iv_first(project) else None
+        filmed = {tuple(group) for group in keep}
         for i, kind in enumerate(kinds):
-            if kind != "host" or i == free:
+            if kind != "host" or i == free or tuple(groups[i]) in filmed:   # a filmed host frame stays as it is
                 continue
             words = sum(len(texts[n - 1].split()) for n in groups[i])
             length = times[i][1] - times[i][0]

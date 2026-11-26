@@ -88,6 +88,16 @@ class DirectorPlanTest(unittest.TestCase):
             first_free = director_plan.apply(PROJECT["id"], long_host, dry_run=True)
             self.assertFalse([p for p in first_free.get("problems", []) if p.startswith("Кадр 1 (ведучий)")])   # Avatar IV
 
+    def test_a_filmed_host_frame_stays_as_it_is(self):
+        # user, 26 November 2026: «перероби цей проект… не генеруй заново ведучого»
+        channel = {**CHANNEL, "settings": {**CHANNEL["settings"], "weights": {"host": 60, "stock_photo": 40}, "weights_auto": ["stock_photo"]}}
+        with patch.object(store, "list_channels", return_value=[channel]), patch.object(director_plan, "avatar_iv_first", return_value=False), \
+             patch.object(director_plan, "kept_host_frames", return_value=[[3, 4]]):
+            moved = director_plan.apply(PROJECT["id"], frames(([1], "host"), ([2, 3], "stock_photo"), ([4], "host"), ([5, 6, 7], "stock_photo"), ([8], "host")), dry_run=True)
+            self.assertTrue(any("уже знятий у HeyGen" in p for p in moved["problems"]))
+            kept = director_plan.apply(PROJECT["id"], frames(([1], "host"), ([2], "stock_photo"), ([3, 4], "host"), ([5, 6, 7], "stock_photo"), ([8], "host")), dry_run=True)
+            self.assertFalse([p for p in kept.get("problems", []) if "HeyGen" in p or "Кадр 3 (ведучий)" in p])   # 4 s, kept anyway
+
     def test_a_plan_needs_the_voice(self):
         self.plan = None
         with self.assertRaises(store.StudioError):
