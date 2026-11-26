@@ -134,7 +134,7 @@ function groupLane(title,groups,ref){
   if(ref&&groups.length)enableStackReorder(label,ref);
   if(ref&&groups.length)addStackTools(label,{ref,groups,title});
   const lane=document.createElement('div');lane.className='track-lane universal-lane frame-group-lane';lane.style.width=timelineWidth()+'px';
-  if(ref==='scenes')appendPlannedFrames(lane,groups);
+  // no dashed blocks for frames not made yet (user, 26 November 2026: «нам же це не до чого»); the ruler's red stripes still mark them
   const occupied=[],chosen=new Set(state.multiSelection || []);
   for(const group of groups){
     const bounds=groupBounds(group),members=groupMembers(group);if(!members.length)continue;

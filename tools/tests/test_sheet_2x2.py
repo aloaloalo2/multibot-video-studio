@@ -27,10 +27,15 @@ class SheetTest(unittest.TestCase):
                            check=True, capture_output=True)
             for name, box, colour in zip("abc", boxes, colours):
                 out = Image.open(Path(tmp, name + ".png")).convert("RGB")
-                self.assertEqual(out.size, (box[2] - box[0] + 1 - 10, box[3] - box[1] + 1 - 10))
+                w, h = box[2] - box[0] + 1 - 10, box[3] - box[1] + 1 - 10
+                if 1.6 <= w / h <= 1.96:   # a landscape cell comes out exactly 16:9, cut around its middle
+                    w, h = (round(h * 16 / 9), h) if w / h > 16 / 9 else (w, round(w * 9 / 16))
+                self.assertEqual(out.size, (w, h))
                 self.assertEqual(out.getpixel((0, 0)), colour)
                 self.assertEqual(out.getpixel((out.width - 1, out.height - 1)), colour)
             self.assertFalse(Path(tmp, "-.png").exists())
+            self.assertAlmostEqual(Image.open(Path(tmp, "a.png")).width / Image.open(Path(tmp, "a.png")).height, 16 / 9, places=2)
+            self.assertLess(Image.open(Path(tmp, "c.png")).width, Image.open(Path(tmp, "c.png")).height)   # a vertical one stays
 
 
 if __name__ == "__main__":

@@ -880,7 +880,9 @@ def place(ctx: Context, spec: dict) -> None:
         length = math.floor((end - start) * 1000) / 1000
         aspect = _aspect(asset.get("path") or spec.get("path")) if kind == "image" else None
         vertical = aspect is not None and aspect < 1.6      # 3:4 and 4:3 sit in the frame with fields beside them
-        cover = max((ctx.W / ctx.H) / aspect, 1.0) * 1.02 if aspect and not vertical else 1.0   # a wide photo fills the frame before it drifts
+        # a wide photo fills the frame before it drifts, whether narrower or wider than the frame (a 1.85 picture in a
+        # 16:9 frame needs height, 26 November 2026)
+        cover = max((ctx.W / ctx.H) / aspect, aspect / (ctx.W / ctx.H), 1.0) * 1.02 if aspect and not vertical else 1.0
         name = spec.get("motion") or "none"
         if name not in MOTIONS:
             raise OpError("Рух: zoom_in, zoom_out, pan_left, pan_right або none")

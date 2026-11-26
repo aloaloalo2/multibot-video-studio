@@ -55,8 +55,13 @@ def _picture(project: dict, clip: dict):
         return None
 
 
-def _uncovered(project: dict, clip: dict, picture=None) -> str | None:
-    """A full-frame landscape photo that leaves a strip of the frame empty at its start, middle or end."""
+SLIVER = .03   # a strip up to 3% of the frame over a field is an accident, a wider one a designed margin
+
+
+def _uncovered(project: dict, clip: dict, picture=None, field: bool = False) -> str | None:
+    """A full-frame landscape photo that leaves a strip of the frame empty at its start, middle or end. Over a solid
+    field (the black ground the studio puts under every frame) only a thin strip counts: a few pixels at the edges
+    are a picture that missed the frame, a wide margin is the frame's design (26 November 2026)."""
     if clip.get("kind") != "image" or float(clip.get("width", 1)) < .999 or float(clip.get("height", 1)) < .999:
         return None
     picture = picture or _picture(project, clip)
@@ -66,7 +71,10 @@ def _uncovered(project: dict, clip: dict, picture=None) -> str | None:
         x, y, s = picture.state(moment)
         left, right = x * picture.W - picture.cw * s / 2, x * picture.W + picture.cw * s / 2
         top, bottom = y * picture.H - picture.ch * s / 2, y * picture.H + picture.ch * s / 2
-        gap = max(left, top, picture.W - right, picture.H - bottom)
+        gaps = [left, top, picture.W - right, picture.H - bottom]
+        if field:
+            gaps = [g for g in gaps if g <= SLIVER * min(picture.W, picture.H)]
+        gap = max(gaps, default=0.0)
         if gap > 1.5:
             return f"відкритий край {gap:.0f}px на {moment:.1f}с"
     return None
@@ -167,8 +175,8 @@ def project_summary(project: dict, readiness: dict | None = None, plan: dict | N
             if montage_ops.is_accent(clip) and not montage_ops.is_entrance(clip):
                 accents[str(clip.get("title", "")).split()[-1]] += 1
         field = main and any(_solid_backing(c, main) for c in frame["clips"] if c is not main)
-        picture = _picture(project, main) if main and not field else None
-        uncovered = _uncovered(project, main, picture) if picture else None
+        picture = _picture(project, main) if main else None
+        uncovered = _uncovered(project, main, picture, bool(field)) if picture else None
         if uncovered:
             problems.append(uncovered)
         elif picture and _bare_portrait(project, main, frame, picture, level):

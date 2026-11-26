@@ -3,7 +3,8 @@
 
 Codex draws four pictures on one 16:9 sheet: cheaper and faster than four separate requests (user, 14 November 2026).
 The sheet is cut along its real gaps near the middle (a light or transparent band). After trimming the gap colour,
-the script removes another 5 pixels from all four edges of each picture to clear thin borders.
+the script removes another 5 pixels from all four edges of each picture to clear thin borders, and a landscape
+picture is cut to exactly 16:9 around its middle so that it fills the frame.
 Order: top left, top right, bottom left, bottom right.
 
   python3 tools/sheet_2x2.py SHEET.png OUT1.png OUT2.png OUT3.png OUT4.png
@@ -81,9 +82,30 @@ def cut(sheet: Path, tolerance: int = 18) -> list[Image.Image]:
             raise SystemExit(f"{sheet.name}: a cell came out {width}×{height}; is this a 2×2 sheet?")
         if min(width, height) <= 2 * EDGE_INSET:
             raise SystemExit(f"{sheet.name}: a {width}×{height} cell is too small to trim {EDGE_INSET} pixels per edge")
-        out.append(image.crop((left + a + EDGE_INSET, top + b + EDGE_INSET,
-                               left + c - EDGE_INSET, top + d - EDGE_INSET)))
+        out.append(to_widescreen(image.crop((left + a + EDGE_INSET, top + b + EDGE_INSET,
+                                             left + c - EDGE_INSET, top + d - EDGE_INSET))))
     return out
+
+
+WIDE = 16 / 9
+NEAR_WIDE = (1.6, 1.96)   # a cell of a 16:9 sheet that the uneven gaps left a little off 16:9
+
+
+def to_widescreen(piece: Image.Image) -> Image.Image:
+    """A landscape cell cut to exactly 16:9 around its middle: trimming the gaps leaves cells like 792×429 (1.85), and a
+    picture wider or narrower than the frame shows thin black strips at the edges of its first zoom (user, 26 November
+    2026: Antropov's first frame began with strips above and below). A cell far from 16:9 (a vertical picture) stays."""
+    w, h = piece.size
+    aspect = w / h
+    if not NEAR_WIDE[0] <= aspect <= NEAR_WIDE[1] or abs(aspect - WIDE) < 1e-3:
+        return piece
+    if aspect > WIDE:
+        width = round(h * WIDE)
+        left = (w - width) // 2
+        return piece.crop((left, 0, left + width, h))
+    height = round(w / WIDE)
+    top = (h - height) // 2
+    return piece.crop((0, top, w, top + height))
 
 
 def main() -> None:
