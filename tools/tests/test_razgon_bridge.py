@@ -168,8 +168,8 @@ class RenderMemoryTest(unittest.TestCase):
         return state["most"]
 
     def test_as_many_frames_as_fit_under_the_limit(self):
-        # 8 GB in use on 16 GB: 80 % is 12.8 GB, so two Chromiums of 2.2 GB fit and the third would not
-        self.assertEqual(self.run_frames(8), 2)
+        # 8 GB in use on 16 GB: 80 % is 12.8 GB, so four young Chromiums counted at 1 GB fit and the fifth would not
+        self.assertEqual(self.run_frames(8), 4)
 
     def test_the_first_frame_starts_even_when_memory_is_short(self):
         self.assertEqual(self.run_frames(15), 1)

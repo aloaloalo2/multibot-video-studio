@@ -50,8 +50,12 @@ BED_TITLE = "Razgon · музика й ефекти"
 OVERLAY_TITLE = "Плашка каналу"
 RESOLUTIONS = {720: "720p", 1080: "1080p", 1440: "1440p", 2160: "2160p"}
 JOBS = max(1, min(8, (os.cpu_count() or 2) // 2))   # at most this many Studio frames render at the same time (render_many)
-CHROMIUM_BYTES = 2.2e9   # one render.mjs worker drawing 1920x1080 (06 Fast Food, 31 October 2026)
-RAM_LIMIT = float(os.environ.get("RAZGON_RAM_LIMIT", 0.88))   # renders fill the Mac's memory up to this share (user: 80% on 31 October 2026, «експорт дозволяю до 88% рам» on 19 November 2026)
+# one render.mjs worker drawing 1920x1080, counted only while it is young (RAMP): after that the RAM reading has it. 2.2 GB
+# on 31 October 2026 (06 Fast Food); since the renders capture through DevTools a worker's node and Chromium hold about
+# 0.5 GB (Andromeda's export, 26 November 2026: one worker at 75% of RAM while 88% was allowed, user: «рам 75 а дозволено
+# 85»), so a young one is counted at 1 GB, twice what it takes
+CHROMIUM_BYTES = 1.0e9
+RAM_LIMIT = float(os.environ.get("RAZGON_RAM_LIMIT", 0.90))   # renders fill the Mac's memory up to this share (user: 80% on 31 October 2026, «експорт дозволяю до 88% рам» on 19 November 2026, «дозволяю 90» on 26 November 2026)
 RAMP = 15.0              # seconds a new Chromium takes to reach its full memory
 
 
