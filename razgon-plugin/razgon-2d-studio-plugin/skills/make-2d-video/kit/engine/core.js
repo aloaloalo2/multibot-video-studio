@@ -243,8 +243,12 @@ export function text(g, str, x, y, o = {}) {
   // Text is drawn once into a cached bitmap and placed with drawImage: canvas fillText snaps glyphs to whole pixels,
   // so text on a slowly moving or zooming camera would step while everything around it glides.
   const opt = { font, weight, color, align, base, gl, glowColor, spacing, stroke, strokeColor, italic, shadow };
-  const bm = textBitmap(g, String(str), size, opt);
-  if (bm) {
+  // render.mjs --text-check draws each sampled frame a second time with __TEXT_HIDE: the picture under every line of text
+  // without the letters, to measure the text's contrast against it
+  const hide = !!globalThis.__TEXT_HIDE;
+  const bm = hide ? null : textBitmap(g, String(str), size, opt);
+  if (hide) { /* the boxes are still logged below */ }
+  else if (bm) {
     const dx = x - bm.ox, dy = y - bm.oy;
     const done = toned && drawToned(g, bm, textBitmap(g, String(str), size, { ...opt, color: oppositeTone(color), shadow: legibleShadow(size, kind === 'dark') }), dx, dy, kind, luma(color));
     if (!done) g.drawImage(bm.c, dx, dy, bm.w, bm.h);
@@ -260,7 +264,7 @@ export function text(g, str, x, y, o = {}) {
     const m = g.measureText(str), w = m.width, x0 = align === 'center' ? x - w / 2 : align === 'right' || align === 'end' ? x - w : x, T = g.getTransform();
     const px = [x0, x0 + w, x0, x0 + w], py = [y - m.actualBoundingBoxAscent, y - m.actualBoundingBoxAscent, y + m.actualBoundingBoxDescent, y + m.actualBoundingBoxDescent];
     const sx = px.map((v, i) => T.a * v + T.c * py[i] + T.e), sy = px.map((v, i) => T.b * v + T.d * py[i] + T.f);
-    const box = { str: String(str), x0: Math.min(...sx), x1: Math.max(...sx), y0: Math.min(...sy), y1: Math.max(...sy), W: g.canvas.width, H: g.canvas.height, px: size * Math.hypot(T.a, T.b) };
+    const box = { str: String(str), x0: Math.min(...sx), x1: Math.max(...sx), y0: Math.min(...sy), y1: Math.max(...sy), W: g.canvas.width, H: g.canvas.height, px: size * Math.hypot(T.a, T.b), col: String(color), op: g.globalAlpha, sh: !!(contrast || shadow.length || stroke) };
     if (globalThis.TEXT_LOG) globalThis.TEXT_LOG.push(box);
     if (globalThis.DRAW_LOG && String(str).trim()) globalThis.DRAW_LOG.push({ k: 'text', ...box, a: g.globalAlpha, layer: globalThis.__LAYER ?? null });
   }

@@ -253,8 +253,15 @@ def _wait_jobs(pid, request, jobs, errors):
 
 def _frame_files(frame, root, digest, look, fps, engine='avatar_iii', options=None):
     """The frame's identity and its receipt, voice piece and video paths; refuses a frame left half sent before."""
-    start = math.floor(float(frame['start']) * fps + .5 + 1e-8) / fps
-    end = math.floor(float(frame['end']) * fps + .5 + 1e-8) / fps
+    start, end = float(frame['start']), float(frame['end'])
+    timings = [t for t in frame.get('sentence_timings') or [] if isinstance(t, dict)]
+    if frame.get('host_inset') and timings:
+        # the frame sits inside the host's speech (planner.aligned_times): HeyGen gets his words from the first to the
+        # last, no silence on either side, so he never stands frozen; the half seconds beyond the frame feed the transitions
+        start = min(start, float(timings[0]['start']))
+        end = max(end, float(timings[-1]['end']))
+    start = math.floor(start * fps + .5 + 1e-8) / fps
+    end = math.floor(end * fps + .5 + 1e-8) / fps
     identity = {'audio': digest, 'look': look, 'start': start, 'end': end, 'fps': fps}
     old_fingerprint = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
     old_record = store.read_json(root / (old_fingerprint + '.json'), {}) or {}
@@ -496,9 +503,14 @@ def _make_one_video(pid, request, frames, root, source, digest, look, fps):
                     if not row['output'].is_file():
                         # the pause before the voice too: a transition into the frame starts on the living host, with
                         # its hit on the seam (joins.lead_seconds); the frame starts `head` seconds into its file
-                        head = round(min(ONE_VIDEO_GAP, float(row['offset'])), 3)
-                        _cut_video(job['output'], row['offset'] - head, row['identity']['end'] - row['identity']['start'] + head,
-                                   row['output'], tail=ONE_VIDEO_GAP)
+                        speech = row['identity']['end'] - row['identity']['start']
+                        if row['frame'].get('host_inset'):
+                            # only his speech, no silent gap: the frame shows from `head` seconds into it
+                            _cut_video(job['output'], row['offset'], speech, row['output'])
+                            head = round(max(0.0, float(row['frame']['start']) - float(row['identity']['start'])), 3)
+                        else:
+                            head = round(min(ONE_VIDEO_GAP, float(row['offset'])), 3)
+                            _cut_video(job['output'], row['offset'] - head, speech + head, row['output'], tail=ONE_VIDEO_GAP)
                         store.atomic_json(row['receipt'], {'state': 'completed', 'identity': row['identity'],
                                                            'one_video': job['receipt'].name, 'offset': row['offset'], 'head': head})
                     _place(pid, request, {'frame': row['frame'], 'receipt': row['receipt'], 'output': row['output'],
@@ -575,7 +587,10 @@ def _place(pid, request, job):
         record['asset_id'] = asset['id']
         store.atomic_json(receipt, record)
     move, percent = host_zoom(store.load_project_plan(pid), frame, pid)
-    montage_ops.run(pid, [{'op': 'place', 'frame': frame['number'], 'asset_id': asset['id'], 'trim_start': float(record.get('head') or 0),
+    head = record.get('head')
+    if head is None:   # its own video starts at the first word; the frame, inside his speech, a little later
+        head = max(0.0, float(frame['start']) - float((record.get('identity') or {}).get('start', frame['start'])))
+    montage_ops.run(pid, [{'op': 'place', 'frame': frame['number'], 'asset_id': asset['id'], 'trim_start': float(head),
                            'motion': move, 'zoom_percent': percent, 'zoom_base': host_from_voice.host_base(pid, store.load_project_plan(pid), frame['number']),
                            **({'until': frame['end']} if frame.get('closing') else {})}])
 

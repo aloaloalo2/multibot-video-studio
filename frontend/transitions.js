@@ -1,4 +1,4 @@
-// CapCut transitions (capcut.js, engine/capcut_fx.py) are drawn by the server; the seam dissolves until that video is ready
+// CapCut transitions (capcut.js, engine/capcut_fx.py) are drawn by the server; the seam cuts until that video is ready
 function isCapcutTransition(type){return typeof type==='string'&&type.startsWith('capcut_t');}
 const transitionNames={cut:'Склейка',crossfade:'Розчинення',slide_left:'Зсув ліворуч',slide_right:'Зсув праворуч',slide_up:'Зсув угору',slide_down:'Зсув униз',zoom_in:'М’яке наближення',zoom_out:'М’яке віддалення'};
 let joinCacheToken='',joinCache=new Map();
@@ -94,8 +94,11 @@ function transitionValues(clip,local,values,grouped=false){
       }else values.opacity*=incoming?(p>=.5?1:0):(p<.5?1:0);
       continue;
     }
-    // a CapCut transition plays its drawn video over the seam (capcut.js); until it is ready the preview dissolves
-    if((type==='crossfade'||type.startsWith('capcut_t'))&&!join.under&&!groupSides.has(direction))values.opacity*=incoming?p:1-p;
+    // a CapCut transition plays its drawn video over the seam (capcut.js); until it is ready (and beside a Razgon frame,
+    // which only the export draws) the preview cuts on the seam: a stand-in dissolve made a CapCut seam look like a plain
+    // fade (user, 26 November 2026: «прозорість по дефолту прибери… я путаюсь, це дійсно перехід чи ні»)
+    if(type.startsWith('capcut_t')){if(incoming?time<Number(join.seam):time>=Number(join.seam))values.opacity=0;continue;}
+    if(type==='crossfade'&&!join.under&&!groupSides.has(direction))values.opacity*=incoming?p:1-p;
     if(type.startsWith('slide_')){if(type==='slide_left')values.x+=incoming?progress:-progress;if(type==='slide_right')values.x+=incoming?-progress:progress;if(type==='slide_up')values.y+=incoming?progress:-progress;if(type==='slide_down')values.y+=incoming?-progress:progress;}
     if(type.startsWith('zoom_')){const s=type==='zoom_in'?(incoming?.88+.12*p:1+.12*p):(incoming?1.12-.12*p:1-.12*p);values.x=.5+(values.x-.5)*s;values.y=.5+(values.y-.5)*s;values.scale*=s;if(!join.under&&!groupSides.has(direction))values.opacity*=incoming?p:1-p;}
   }

@@ -392,3 +392,21 @@ class FullFrameQualityRuleTest(unittest.TestCase):
         for text in (production.FULL_SIZE_PICTURE_RULE, inspect.getsource(production_kit)):
             self.assertIn('окремою картинкою' if text is not production.FULL_SIZE_PICTURE_RULE else 'малюй окремо', text)
             self.assertIn('upscale', text)
+
+
+class BareHostsTest(unittest.TestCase):
+    """Host frames get motion graphics whether their HeyGen video is new or kept (26 November 2026)."""
+    def test_hosts_without_graphics_are_found_and_the_short_ones_left_out(self):
+        import production
+        from unittest.mock import patch
+        plan = {'frames': [{'number': 1, 'format': 'host', 'start': 0, 'end': 8}, {'number': 2, 'format': 'host', 'start': 8, 'end': 11},
+                           {'number': 3, 'format': 'host', 'start': 11, 'end': 20}, {'number': 4, 'format': 'animation', 'start': 20, 'end': 30}]}
+        clip = lambda cid, kind, **k: {'id': cid, 'kind': kind, **k}
+        project = {'tracks': [{'clips': [clip('b1', 'animation', frame_background=True), clip('v1', 'video'),
+                                         clip('v2', 'video'), clip('v3', 'video'), clip('g3', 'animation'), clip('a4', 'animation')]}],
+                   'scene_groups': [{'title': 'Кадр 1', 'clip_ids': ['b1', 'v1']}, {'title': 'Кадр 2', 'clip_ids': ['v2']},
+                                    {'title': 'Кадр 3', 'clip_ids': ['v3', 'g3']}, {'title': 'Кадр 4', 'clip_ids': ['a4']}]}
+        with patch.object(production.store, 'load_project_plan', return_value=plan), patch.object(production.store, 'load_project', return_value=project):
+            bare = production.bare_hosts('p', range(1, 5))
+            self.assertEqual(bare, [1, 2])                         # frame 3 has graphics already, 4 is no host
+            self.assertEqual(production.graphics_frames('p', bare), [1])   # frame 2 is shorter than five seconds

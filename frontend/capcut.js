@@ -15,7 +15,16 @@ function capcutDefaultDuration(type){const own=Number(capcutCatalog.transitions[
 
 /* ------------------------------------------------------------------ the seam's transition in the preview */
 const capcutPreviews=new Map();   // key -> {state:'loading'|'ready'|'failed', url, video}
-function capcutJoinKey(join){return [state.project?.id,join.id,join.type,Number(join.seam).toFixed(3),Number(join.duration).toFixed(3),state.project?.revision].join(':');}
+// The key follows the two frames at the seam, not the project's revision: an edit anywhere else used to send every CapCut
+// seam back into the queue, and until it was drawn again it played as a plain dissolve (user, 26 November 2026: «перехід
+// синій, але… там стандартний перехід. Просто прозорість»)
+function capcutSides(join){
+  const p=state.project;if(!p)return '';
+  const clips=new Map((p.tracks||[]).flatMap(t=>t.clips||[]).map(c=>[c.id,c]));
+  return [join.from_ref,join.to_ref].map(ref=>{const id=String(ref||'').split(':').pop();const group=(p.scene_groups||[]).find(g=>g.id===id);
+    return (group?.clip_ids||[]).map(i=>clips.get(i)).filter(Boolean).map(c=>[c.id,c.start,c.duration,c.trim_start,c.asset_id,c.x,c.y,c.scale,c.opacity,JSON.stringify(c.keyframes||[])].join(',')).join(';');}).join('|');
+}
+function capcutJoinKey(join){return [state.project?.id,join.id,join.type,Number(join.seam).toFixed(3),Number(join.duration).toFixed(3),capcutSides(join)].join(':');}
 function requestCapcutPreview(join){
   const key=capcutJoinKey(join);if(capcutPreviews.has(key))return capcutPreviews.get(key);
   const entry={state:'loading'};capcutPreviews.set(key,entry);capcutWaiting.set(key,{join,entry,projectId:state.project.id});

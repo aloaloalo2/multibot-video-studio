@@ -116,3 +116,43 @@ class SeamProtectionTest(NativeAnimationTest):
         ctx=self.context()
         native_animation.place(ctx,{'frame':3,'clips':[{'kind':'text','text':'Label'}, {'kind':'animation','title':'Bar'}]})
         self.assertEqual(ctx.actions[-1]['payload']['text'],'Label')
+
+
+class CameraMoveTest(unittest.TestCase):
+    """The whole frame moves together on one word from the agent; the black backing stays (26 November 2026)."""
+    def context(self):
+        return NativeAnimationTest.context(self)
+
+    def place(self, camera):
+        ctx = self.context()
+        spec = {'frame': 3, 'camera': camera, 'clips': [
+            {'kind': 'animation', 'content_type': 'shape', 'width': 1, 'height': 1},
+            {'kind': 'animation', 'content_type': 'shape', 'x': .8, 'y': .3, 'width': .1, 'height': .1,
+             'keyframes': [{'time': 0, 'opacity': 0}, {'time': .4, 'opacity': 1}]}]}
+        native_animation.place(ctx, spec)
+        return ctx, [a['payload'] for a in ctx.actions]
+
+    def at(self, clip, prop, t):
+        return montage_ops.keyframe_value(clip, prop, t)
+
+    def test_pan_moves_every_layer_together_and_keeps_the_picture_covering_the_frame(self):
+        ctx, (black, picture, marker) = self.place('pan_right')
+        self.assertFalse(black.get('keyframes'))
+        for t in (0, 3, picture['duration'] - .01):
+            s = self.at(picture, 'scale', t)
+            self.assertGreaterEqual(s / 2 - abs(self.at(picture, 'x', t) - .5), .5 - 1e-6)   # no edge comes into view
+            # the marker keeps its place on the picture: its offset from the picture's centre scales with it
+            self.assertAlmostEqual(self.at(marker, 'x', t) - self.at(picture, 'x', t), .3 * s, places=4)
+        self.assertGreater(self.at(picture, 'x', 0), self.at(picture, 'x', picture['duration'] - .01))
+        self.assertAlmostEqual(self.at(marker, 'opacity', 0), 0)
+        self.assertAlmostEqual(self.at(marker, 'opacity', 1), 1)
+        self.assertIn('камера pan_right 5%', ' '.join(ctx.report))
+
+    def test_zoom_in_grows_from_the_frame_and_unknown_moves_are_refused(self):
+        _, (_, picture, _) = self.place('zoom_in')
+        self.assertAlmostEqual(self.at(picture, 'scale', 0), 1)
+        self.assertAlmostEqual(self.at(picture, 'scale', picture['duration'] - .01), 1.05, places=2)
+        with self.assertRaises(store.StudioError):
+            self.place('spin')
+        _, (_, plain, _) = self.place(None)
+        self.assertFalse(plain.get('keyframes'))

@@ -104,6 +104,9 @@ QUALITY = """5. Здача після перевірки композиції й
    Картинок кадрів не переглядай і mark не став: увесь фільм одним проходом подивиться окрема сесія огляду в кінці.
    Перед завершенням запусти безкоштовні logic-check і text-check лише свого інтервалу (команди нижче, без токенів, близько 20 с).
    Виправ усе, що вони знайшли, і повтори лише ту перевірку, що знайшла ваду.
+   Текст, що зливається з фоном (text-check: «melt into the picture»), виправляй тим, що пасує місцю: зсунь на спокійнішу
+   ділянку, дай колір, що вирізняється саме на цьому фоні, обводку (stroke), сильнішу тінь чи м'яку підкладку. Колір написів
+   вибирай під кожну сцену за її фоном і змістом, не один і той самий рожевий чи синій на всі підписи фільму.
    Не повторюй огляд незміненого ролика та не запускай нового агента. Повний MP4 робить студія після «Експорт MP4».
    Для швидкодії уникай фільтра на кожному предметі, повторних завантажень і зайвих шарів; одну групу розмивай одним проходом.
    Не здавай видимі дефекти як готові кадри."""
@@ -336,6 +339,9 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
    а для кольорового оформлення можна передати background.
    clips містить шари kind="animation" (content_type="shape", "gradient", "image") чи kind="text" з keyframes.
    start у шарі відносний до початку кадру, duration у секундах, x/y/width/height у частках кадру; PNG-асет передай як path.
+   Кожному кадру animation дай легкий рух усього кадру одним полем camera: "pan_left", "pan_right", "pan_up", "pan_down",
+   "zoom_in" або "zoom_out" (за замовчуванням 5%, {{"move": ..., "amount": 0.03…0.08}} для іншої сили). Студія сама рухає всі шари
+   разом, позначки лишаються на своїх місцях на картинці; напрямок вибирай за змістом і чергуй між сусідніми кадрами.
    Прозорі PNG-предмети малюй одразу з прозорим фоном: у промпті «fully transparent background, real alpha channel, no backdrop,
    no white or grey background, no floor, no cast shadow under the object», аркушем по 6 з широкими прозорими проміжками, і ріж
    python3 "{tools.rsplit('/', 1)[0]}/razgon-plugin/razgon-2d-studio-plugin/skills/make-2d-video/kit/tools/split_sheet.py" --project <службова папка кадру> --sheet <аркуш> --names <імена> --clean 40
@@ -354,6 +360,9 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
    Кожна вставка своя, під цей момент, і пасує стилем (кольори, шрифт, настрій) до каналу й решти ролика;
    побажання автора в правилах каналу йдуть першими. Текст вставки студія сама збирає одним блоком по центру (compose_text):
    виділене слово чи фраза іншим кольором лишається в тому ж блоці, без зсуву вбік без причини.
+   Один із прийомів тла (не шаблон, серед інших): позаду вже готове відео ведучого цього випуску без звуку, трохи розмите,
+   над ним чорне полотно з прозорістю від 65 до 80% (з розмиттям можна й 60%), зверху текст: видно, що ведучий говорить,
+   і вставка жива. Бери лише вже наявні кліпи ведучого, нового відео HeyGen для цього не замовляй.
    Основа: python3 "{tools}/studio.py" place {project['id']} N --text
    [--backdrop host|blur|grid] [--entrance letters_fade|blur_up|up|pop|letters_up|grow|left|blur|letters_blur|down|fade|shrink|right]
    [--display "ТЕКСТ"] ставить слова в такт голосу на одну з основ: host (відео ведучого з озвучки цієї ж секунди під чорним 59%),
@@ -516,7 +525,7 @@ def film_repair_brief(project: dict, request: dict, notes: str) -> str:
 Спершу визнач, чого саме стосується побажання: яких кадрів, переходів, тексту, звуку чи монтажу. Для цього прочитай
 python3 tools/studio.py summary {project['id']} --issues і, за потреби, plan чи still. Змінюй лише те, про що просить автор.
 Інші кадри, їхні таймінги, озвучку, музику, логотип і монтаж збережи. Не перебудовуй весь ролик і не створюй кадри заново.
-Кодову анімацію animation редагуй шарами: tools/studio.py ops з op="animation", frame=N, replace=true, clips=[...].
+Кодову анімацію animation редагуй шарами: tools/studio.py ops з op="animation", frame=N, replace=true, clips=[...]. Залиш або додай camera (легкий рух усього кадру).
 Для animation і razgon_2d перевіряй стоп-кадри; відеокадри й проксі не рендери. Відео рендериться тільки через «Експорт MP4» за дією автора.
 Перевір змінене на реальних стоп-кадрах і виправ явні вади. Коротко повідом українською, що змінено і що перевірено.
 Якщо побажання незрозуміле або вимагає того, що студія зробити не може, нічого не ламай і поясни це у відповіді.
@@ -535,7 +544,7 @@ def repair_brief(project: dict, request: dict, notes: str) -> str:
 Прочитай коротку карту production-context.txt: вона містить вибрані кадри, їхні сцени та сусідів для контексту.
 Зміни лише вибрані кадри; інші кадри, їхні таймінги, озвучку, музику, логотип і монтаж збережи. Спільний файл редагуй обережно:
 збережи поведінку невибраних кадрів. Не перебудовуй весь ролик і не запускай початкову генерацію кадрів. Використовуй наявні сцени та предмети.
-Кодову анімацію animation редагуй шарами: tools/studio.py ops з op="animation", frame=N, replace=true, clips=[...]. Якщо кадр уже
+Кодову анімацію animation редагуй шарами: tools/studio.py ops з op="animation", frame=N, replace=true, clips=[...]. Залиш або додай camera (легкий рух усього кадру). Якщо кадр уже
 збережений відеофайлом, віднови його композицію редагованими шарами з наявних елементів.
 Для animation і razgon_2d перевіряй стоп-кадри. Відеокадри й проксі не рендери, старі скрипти render, FFmpeg чи moviepy для оновлення
 MP4 кадру не запускай: відео рендериться тільки через «Експорт MP4» за дією автора.
@@ -612,6 +621,26 @@ def graphics_frames(pid: str, numbers) -> list:
     """The host frames long enough for motion design over them."""
     frames = {f["number"]: f for f in (store.load_project_plan(pid) or {}).get("frames", [])}
     return sorted(n for n in numbers or [] if n in frames and frames[n]["end"] - frames[n]["start"] >= HOST_GRAPHICS_MIN)
+
+
+def bare_hosts(pid: str, numbers) -> list:
+    """Host frames among `numbers` whose group holds only the HeyGen video and its black ground: no graphics yet."""
+    plan = store.load_project_plan(pid) or {}
+    hosts = {f["number"] for f in plan.get("frames", []) if f.get("format") == "host"} & set(numbers or [])
+    if not hosts:
+        return []
+    project = store.load_project(pid)
+    clips = {c["id"]: c for layer in project.get("tracks", []) for c in layer.get("clips", [])}
+    groups = {g.get("title"): g for g in project.get("scene_groups", [])}
+    bare = []
+    for number in sorted(hosts):
+        group = groups.get(f"Кадр {number}")
+        if not group:
+            continue
+        members = [clips[i] for i in group.get("clip_ids", []) if i in clips]
+        if any(c.get("kind") == "video" for c in members) and all(c.get("kind") == "video" or c.get("frame_background") for c in members):
+            bare.append(number)
+    return bare
 
 
 def host_graphics(pid: str) -> bool:
@@ -778,7 +807,11 @@ def _run(pid: str, cli: Path, notes: str = "") -> None:
                 production_kit.unlock(store.load_project(pid))
         if heygen_thread:
             heygen_thread.join()   # the agent is done: the film waits for the host's videos still rendering at HeyGen
-        long_hosts = graphics_frames(pid, heygen_numbers)
+        # every host frame of this run long enough for it and still without graphics, whether its HeyGen video came now
+        # or was kept from before (user, 26 November 2026: the kept videos of Astrofizika never got any: «що значить новий
+        # кадр?… галочка… мало би використовуватись»); a whole-film repair leaves the hosts to its own agent
+        scope = request.get('repair_frames') or ([] if request.get('repair_film') else range(1, int(request['frames']) + 1))
+        long_hosts = graphics_frames(pid, bare_hosts(pid, scope))
         if long_hosts and host_graphics(pid) and not heygen_errors and not director.limit_stop(answer) and not cancelled():
             # the host's videos stand now: one short session puts the motion graphics over the long ones
             graphics_code, graphics_answer = launch(long_hosts, '', 900, task=host_graphics_task(pid))

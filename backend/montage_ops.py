@@ -1684,7 +1684,17 @@ def motion_code_op(ctx: Context, spec: dict) -> None:
     ctx.report.append(f"кадр {frame['number']}: моушн-код «{label}» {start:.2f}–{start + duration:.2f} с")
 
 
-OPS = {"effect": effect, "transition_sounds": soundtrack.transitions, "typing_sounds": soundtrack.typing, "drawing_sounds": soundtrack.drawing, "appear_sounds": soundtrack.appear, "soundtrack": soundtrack.place, "animation": native_animation.place, "reglue": reglue, "reanimate": reglue, "animate_accents": reglue, "accent": accent, "clear_accents": clear_accents, "replace": replace, "transitions": transitions, "place": place, "remove": remove, "motion_code": motion_code_op, "compose_text": compose_text, "design_text": design_text}
+def _host_inset(ctx, spec):
+    import live_montage
+    live_montage.host_inset(ctx, spec)
+
+
+def _frame_camera(ctx, spec):
+    import live_montage
+    live_montage.frame_camera(ctx, spec)
+
+
+OPS = {"host_inset": _host_inset, "frame_camera": _frame_camera, "effect": effect, "transition_sounds": soundtrack.transitions, "typing_sounds": soundtrack.typing, "drawing_sounds": soundtrack.drawing, "appear_sounds": soundtrack.appear, "soundtrack": soundtrack.place, "animation": native_animation.place, "reglue": reglue, "reanimate": reglue, "animate_accents": reglue, "accent": accent, "clear_accents": clear_accents, "replace": replace, "transitions": transitions, "place": place, "remove": remove, "motion_code": motion_code_op, "compose_text": compose_text, "design_text": design_text}
 
 
 def run(pid: str, ops: list, expected_revision=None, dry_run: bool = False) -> dict:
@@ -1730,4 +1740,6 @@ def run(pid: str, ops: list, expected_revision=None, dry_run: bool = False) -> d
             by_frame.setdefault(frame, []).append(title)
         groups = [{"type": "group_clips", "payload": {"clip_titles": titles, "title": frame}} for frame, titles in by_frame.items()]
         result = store.apply_action(pid, "batch", {"actions": ctx.actions + groups}, project.get("revision", 0))
+        if getattr(ctx, "new_plan", None):   # an op that moves frame edges (live_montage.host_inset) moves the plan's too
+            result = store.attach_plan(pid, ctx.new_plan)
     return {"revision": result.get("revision", 0), "report": ctx.report, "applied": len(ctx.actions)}

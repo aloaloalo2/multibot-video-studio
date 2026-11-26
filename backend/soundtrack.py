@@ -359,6 +359,11 @@ def place(ctx, spec, *, transition=False, typing=False, drawing=False, appear=Fa
         # переходів»): on a seam, the middle of the transition; on any other cue, the cue's own time
         # typing has no single peak: it starts with the first letter
         hit = cue['t'] if typing or drawing or cue.get('from_start') else (cue['hit'] if 'hit' in cue else cue['t'] + (cue['dur'] / 2 if transition else 0)) - _peak(measured)
+        if transition and 'join' in cue:
+            # never before the transition's first frame: a swelling whoosh whose peak was put on the hit began up to 0.3 s
+            # ahead of the picture (user, 26 November 2026: «звук починається раніше, ніж перехід»); its peak may come a
+            # little after the hit instead, and the sound keeps its whole length
+            hit = max(hit, float(cue['t']))
         start = round(max(0.0, min(hit, total - .1)), 3)
         add(path, title, start, max(.1, min(length, total - start)), min(1.5, channel_level(sound, 'sfx', SFX_VOLUME) * 10 ** ((cue.get('gain', -8) + 8) / 20)))
     ctx.report.append(f'звук: музика {int(use_music)}, дозволених подій {len(events)}')

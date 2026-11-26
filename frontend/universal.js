@@ -373,6 +373,19 @@ function renderUniversalPreview(){
   composition.hidden=!visible.length;placeholder.hidden=!!visible.length;
   if(!visible.length)placeholder.textContent=duration()?'На цій позиції немає візуального кліпу':'Додайте матеріал на шар';
   const frameWidth=composition.clientWidth,frameHeight=composition.clientHeight;   // read once: a read after the style writes below forces a layout per clip
+  // An upcoming video starts playing, hidden and muted, half a second before it shows: started only when it came into a
+  // transition, it stood on its first frame while the browser began playback (user, 26 November 2026: «на момент переходу
+  // там зафразилось… в відео нема проблем»)
+  for(const {clip,start} of spans){
+    if(clip.kind!=='video'||shown.has(clip.id))continue;
+    const video=state.previewNodes.get(clip.id)?._video;if(!video||!Number.isFinite(video.duration))continue;
+    const soon=state.playing&&start-now<=.5&&start>now,target=seconds(clip.trim_start)+(now-seconds(clip.start));
+    if(soon&&target>=0&&target<video.duration-.05){
+      video.muted=true;
+      if(!video.seeking&&Math.abs(video.currentTime-target)>.15)video.currentTime=target;
+      if(video.paused)video.play().catch(()=>{});
+    }else if(!video.paused&&!soon)video.pause();
+  }
   for(const clip of visible){
     const wrapper=state.previewNodes.get(clip.id);if(!wrapper)continue;
     const local=now-seconds(clip.start),values=animatedValues(clip,local,true);
@@ -407,7 +420,9 @@ function renderUniversalPreview(){
       if(!video.paused)video.pause();
       if(!video.seeking&&Math.abs(video.currentTime-(video.duration-.04))>.06)video.currentTime=Math.max(0,video.duration-.04);
       video.muted=true;
-    }else if(video){const target=seconds(clip.trim_start)+local,drift=target-video.currentTime,running=state.playing&&!video.paused;if(running&&Math.abs(drift)<=.75)video.playbackRate=Math.abs(drift)<.04?1:Math.max(.8,Math.min(1.25,1+drift));else{video.playbackRate=1;if(!video.seeking&&Number.isFinite(video.duration)&&Math.abs(drift)>(running?.75:.2))video.currentTime=Math.min(Math.max(0,target),video.duration);}video.muted=state.monitorMuted || clipIsMuted(clip) || Number(clip.volume ?? 0)===0;video.volume=Math.max(0,Math.min(1,Number(clip.volume ?? 0)*state.monitorVolume));if(state.playing&&video.paused&&!video.seeking)video.play().catch(()=>{});if(!state.playing&&!video.paused)video.pause();}
+    // dragged by hand, the picture follows the playhead to the video frame (it used to wait for 0.2 s of difference, and
+    // a 0.35 s transition showed one frozen frame while the CapCut film beside it moved; user, 26 November 2026)
+    }else if(video){const target=seconds(clip.trim_start)+local,drift=target-video.currentTime,running=state.playing&&!video.paused;if(running&&Math.abs(drift)<=.75)video.playbackRate=Math.abs(drift)<.04?1:Math.max(.8,Math.min(1.25,1+drift));else{video.playbackRate=1;if(!video.seeking&&Number.isFinite(video.duration)&&Math.abs(drift)>(running?.75:.6/(Number(state.project?.fps)||25)))video.currentTime=Math.min(Math.max(0,target),video.duration);}video.muted=state.monitorMuted || clipIsMuted(clip) || Number(clip.volume ?? 0)===0;video.volume=Math.max(0,Math.min(1,Number(clip.volume ?? 0)*state.monitorVolume));if(state.playing&&video.paused&&!video.seeking)video.play().catch(()=>{});if(!state.playing&&!video.paused)video.pause();}
   }
   $('time-current').textContent=clockMs(Math.max(0,state.playhead-timelineOrigin()));$('time-total').textContent=clock(timelineSpan());$('seek').value=timelineSpan()?Math.round((state.playhead-timelineOrigin())/timelineSpan()*1000):0;
   updateTimelinePlayhead();

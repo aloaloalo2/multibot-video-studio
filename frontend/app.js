@@ -903,7 +903,7 @@ function stopPlayback(){if(state.playing)saveTimelineView();state.playing=false;
 function updateMonitorControls(){
   const muted=state.monitorMuted || state.monitorVolume===0,button=$('monitor-audio');
   button.innerHTML=`<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4 6 8H3v8h3l5 4z"/>${muted?'<path d="m16 9 5 6m0-6-5 6"/>':'<path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/>'}</svg>`;
-  button.classList.toggle('sound-on',!muted);button.setAttribute('aria-pressed',String(!muted));button.setAttribute('aria-label',muted?'Увімкнути звук':'Вимкнути звук');button.title=muted?'Увімкнути звук':'Вимкнути звук';
+  button.classList.toggle('sound-on',!muted);button.setAttribute('aria-pressed',String(!muted));button.setAttribute('aria-label',muted?'Увімкнути звук':'Вимкнути звук');button.removeAttribute('title');
   $('monitor-volume').value=Math.round(state.monitorVolume*100);$('monitor-volume-value').textContent=Math.round(state.monitorVolume*100)+'%';
 }
 
@@ -994,7 +994,7 @@ function previewFullscreenOn(){return document.fullscreenElement===previewPanel|
 function setPreviewExpanded(on){previewPanel.classList.toggle('preview-expanded',on);updateFullscreenButton();requestAnimationFrame(()=>{layoutPreview();updatePreviewViewport();});}
 function updateFullscreenButton(){
   const on=previewFullscreenOn(),button=$('preview-fullscreen');if(!button)return;
-  button.setAttribute('aria-label',on?'Вийти з повного екрана':'На весь екран');button.title=button.getAttribute('aria-label');
+  button.setAttribute('aria-label',on?'Вийти з повного екрана':'На весь екран');button.removeAttribute('title');
   button.querySelector('path').setAttribute('d',on?'M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5':'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5');
 }
 // the browser's own full screen; where a browser refuses it (the app's built-in browser says nothing and stays), the
@@ -1018,7 +1018,7 @@ function updatePreviewViewport(){
   state.previewPanY=Math.max(-limitY,Math.min(limitY,state.previewPanY));
   $('preview-content').style.transform=`translate(${state.previewPanX}px,${state.previewPanY}px) scale(${zoom})`;
   surface.classList.toggle('is-zoomed',zoom>1);
-  surface.title=zoom>1?'Перетягніть кадр рукою. Натисніть ще раз, щоб віддалити.':(state.project?'Натисніть, щоб наблизити':'');
+  surface.title=zoom>1?'Перетягніть кадр рукою. Натисніть ще раз, щоб віддалити.':'';   // no hint over the picture (user, 26 November 2026: «прибери… натисніть, щоб приблизити, воно заважає»)
   $('preview-zoom-out').disabled=!state.project || zoom<=previewZoomLevels[0];
   $('preview-zoom-in').disabled=!state.project || zoom>=previewZoomLevels.at(-1);
   $('preview-zoom-reset').disabled=!state.project || zoom===1;

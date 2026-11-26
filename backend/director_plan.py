@@ -21,6 +21,10 @@ HOST_GOOD_WORDS = 10      # a host frame on the script's times: about this many 
 HOST_MAX_WORDS = 23       # and never more (frame 11)
 HOST_MAX_SECONDS = 3.0    # a host frame on the voice's own times (Avatar III repeats itself in a longer take)
 HOST_SECONDS_SLACK = .5   # «орієнтовно до 3 секунд»
+# and never shorter: the frame gives half a second on each side to its neighbours (planner.HOST_INSET), so a shorter phrase
+# would show the host for a blink (user, 26 November 2026: «від 2,5 секунд… мінімальну кількість… слів»)
+HOST_MIN_SECONDS = 2.5
+HOST_MIN_WORDS = 6
 
 
 def kept_host_frames(project: dict) -> list[list[int]]:
@@ -163,7 +167,7 @@ def sentences(pid: str) -> dict:
             # the last frames counted from the end: 1 is the film's last frame
             "closing": [{"from_end": len(ending) - index, "format": kind} for index, kind in enumerate(ending) if kind] or None,
             "host_rules": {"first_frame": bool(rules) and rules[0] == "host", "last_frame": not (ending or [None])[-1], "no_consecutive": True,
-                           "good_words": HOST_GOOD_WORDS, "max_words": HOST_MAX_WORDS, "max_seconds": HOST_MAX_SECONDS,
+                           "good_words": HOST_GOOD_WORDS, "max_words": HOST_MAX_WORDS, "max_seconds": HOST_MAX_SECONDS, "min_seconds": HOST_MIN_SECONDS, "min_words": HOST_MIN_WORDS,
                            "avatar_iv_first": avatar_iv_first(project), "share_is_ceiling": True,
                            "kept_frames": kept_host_frames(project),
                            "even_distribution": True} if settings.get("host_even_distribution") else None}
@@ -228,7 +232,11 @@ def apply(pid: str, frames, dry_run: bool = False) -> dict:
             run = 1
     duration = float(plan["timing"]["audio"]["duration"])
     try:
-        times = planner.aligned_times([[texts[n - 1] for n in group] for group in groups], timings, duration, None)
+        filmed_groups = {tuple(group) for group in keep}
+        insets = [planner.HOST_INSET if kind == "host" and tuple(group) not in filmed_groups else 0 for kind, group in zip(kinds, groups)]
+        sentence_groups = [[texts[n - 1] for n in group] for group in groups]
+        times = planner.aligned_times(sentence_groups, timings, duration, None, insets)
+        spoken_times = planner.aligned_times(sentence_groups, timings, duration, None)   # a host's length is his whole phrase
     except ValueError as error:
         raise store.StudioError(str(error)) from None
     seconds = {key: 0.0 for key in targets}
@@ -246,10 +254,16 @@ def apply(pid: str, frames, dry_run: bool = False) -> dict:
             if kind != "host" or i == free or tuple(groups[i]) in filmed:   # a filmed host frame stays as it is
                 continue
             words = sum(len(texts[n - 1].split()) for n in groups[i])
-            length = times[i][1] - times[i][0]
+            length = spoken_times[i][1] - spoken_times[i][0]
             if estimated and words > HOST_MAX_WORDS:
                 problems.append(f"Кадр {i + 1} (ведучий): {words} слів, а ведучому до {HOST_MAX_WORDS}, найкраще близько "
                                 f"{HOST_GOOD_WORDS}. Дай ведучому коротшу фразу, а довге речення іншому формату")
+            elif estimated and words < HOST_MIN_WORDS:
+                problems.append(f"Кадр {i + 1} (ведучий): {words} слів, а ведучому щонайменше {HOST_MIN_WORDS}: пів секунди з кожного "
+                                f"боку кадру відходять сусідам. Дай ведучому довшу фразу або віддай цю іншому формату")
+            elif not estimated and length < HOST_MIN_SECONDS:
+                problems.append(f"Кадр {i + 1} (ведучий): {length:.1f} с, а ведучому щонайменше {HOST_MIN_SECONDS:g} с: пів секунди з "
+                                f"кожного боку кадру відходять сусідам. Дай ведучому довшу фразу або віддай цю іншому формату")
             elif not estimated and length > HOST_MAX_SECONDS + HOST_SECONDS_SLACK:
                 problems.append(f"Кадр {i + 1} (ведучий): {length:.1f} с, а ведучого показуй до {HOST_MAX_SECONDS:g} с. "
                                 f"Дай ведучому коротку фразу, а довгу іншому формату")
@@ -281,9 +295,11 @@ def apply(pid: str, frames, dry_run: bool = False) -> dict:
     if problems or dry_run:
         return result
     made = []
-    for number, (group, kind, idea, music, (start, end)) in enumerate(zip(groups, kinds, ideas, musics, times), 1):
+    for number, (group, kind, idea, music, (start, end), inset) in enumerate(zip(groups, kinds, ideas, musics, times, insets), 1):
         frame = {"number": number, "start": round(start, 3), "end": round(end, 3), "sentences": [texts[n - 1] for n in group],
                  "sentence_timings": [dict(timings[n - 1]) for n in group], "format": kind}
+        if inset:
+            frame["host_inset"] = inset   # its edges sit inside the host's speech (planner.aligned_times)
         if idea:
             frame["visual"] = idea
         if music:

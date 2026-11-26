@@ -2492,8 +2492,13 @@ def apply_universal_action(project: dict, action: str, payload: dict) -> bool:
     elif action == "update_clip":
         _, clip = clip_by_id(project, str(payload["clip_id"]))
         changes = payload.get("patch", payload.get("changes", {}))
-        if not isinstance(changes, dict) or set(changes) - ({"title", "text", "color", "content_type", "x", "y", "width", "height", "scale", "opacity", "preset", "preset_duration", "keyframes", "font_size", "text_words", "text_role", "source_frame", "source_text", "capcut_effect", "code", "code_words", "code_assets"} | graphics.FIELDS):
+        if not isinstance(changes, dict) or set(changes) - ({"title", "text", "color", "content_type", "x", "y", "width", "height", "scale", "opacity", "preset", "preset_duration", "keyframes", "font_size", "text_words", "text_role", "source_frame", "source_text", "capcut_effect", "code", "code_words", "code_assets", "easing"} | graphics.FIELDS):
             raise StudioError("Невідоме поле кліпу")
+        if "easing" in changes:   # the curve between keyframes, as add_clip takes it (live_montage.frame_camera samples it linear)
+            if changes["easing"] not in {"linear", "ease_in", "ease_out", "ease_in_out"}:
+                raise StudioError("Невірна крива руху")
+            changes = dict(changes)
+            clip["easing"] = changes.pop("easing")
         if "code" in changes or "code_words" in changes or "code_assets" in changes:
             if clip.get("content_type") != "code":
                 raise StudioError("Код можна змінити лише в шарі моушн-коду")

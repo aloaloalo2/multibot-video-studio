@@ -218,7 +218,15 @@ def snap_frames(plan: dict, fps) -> dict:
     return plan
 
 
-def aligned_times(groups, timings, duration, opening_seconds=None):
+# A host frame starts half a second after its first word and ends half a second before its last one; its neighbours take
+# those moments and the pauses beside them (user, 26 November 2026: «Аватар 3 буде… відправляти застиглі моменти, якщо
+# це буде тиша… кадри сусідні… довші… обрізати його зліва і справа… на півсекунди… як живий монтаж»). The host is then
+# always talking on screen, HeyGen gets his speech alone, and every transition at his seams plays over living pictures.
+HOST_INSET = .5
+HOST_MIN_VISIBLE = 1.5
+
+
+def aligned_times(groups, timings, duration, opening_seconds=None, insets=None):
     boundaries, offset = [0.0], 0
     if opening_seconds is not None:
         if len(groups) < 2 or not 0 < opening_seconds < duration:
@@ -234,6 +242,18 @@ def aligned_times(groups, timings, duration, opening_seconds=None):
             raise ValueError("Невірні межі продовження фрази")
         boundaries.append(timings[offset]["start"])
     boundaries.append(duration)
+    if insets and opening_seconds is None:
+        first = 0
+        for index, group in enumerate(groups):
+            want = float(insets[index] or 0) if index < len(insets) else 0.0
+            if want > 0 and group:
+                a, b = float(timings[first]["start"]), float(timings[first + len(group) - 1]["end"])
+                cut = max(0.0, min(want, (b - a - HOST_MIN_VISIBLE) / 2))
+                if index > 0:
+                    boundaries[index] = a + cut
+                if index < len(groups) - 1:
+                    boundaries[index + 1] = b - cut
+            first += len(group)
     if any(end <= start for start, end in zip(boundaries, boundaries[1:])):
         raise ValueError("Межі кадрів не узгоджуються з озвучкою")
     return list(zip(boundaries[:-1], boundaries[1:]))
@@ -284,7 +304,13 @@ def validate_synced_plan(plan, duration):
         crossing = next((item for item in timings if item["start"] < opening_seconds < item["end"]), None)
         if crossing and (len(plan["frames"]) < 2 or plan["frames"][1].get("continuation") != crossing):
             raise ValueError("Продовження фрази після вступу не відповідає озвучці")
-    expected = aligned_times(groups, timings, duration, opening_seconds)
+    expected = aligned_times(groups, timings, duration, opening_seconds, [frame.get("host_inset", 0) for frame in plan["frames"]])
+    # a host cut where his video really moves (live_montage.host_inset) keeps those edges, and his neighbours meet them
+    for index, frame in enumerate(plan["frames"]):
+        edges = frame.get("host_edges")
+        if isinstance(edges, list) and len(edges) == 2 and 0 < index < len(expected) - 1:
+            start, end = float(edges[0]), float(edges[1])
+            expected[index - 1], expected[index], expected[index + 1] = (expected[index - 1][0], start), (start, end), (end, expected[index + 1][1])
     # a plan on the grid of video frames (snap_frames) has each edge within half a video frame of the spoken one: an edge
     # that falls just on the middle between two frames rounds either way (360.86 s at 25 fps, 26 November 2026)
     slack = .0011 + (.5 / float(plan["frame_grid"]) + 1e-6 if plan.get("frame_grid") else 0)
@@ -568,10 +594,10 @@ def keep_director_frames(plan, previous):
     for frame in previous["frames"]:
         groups.append(sentences[offset:offset + len(frame["sentences"])])
         offset += len(frame["sentences"])
-    times = aligned_times(groups, timings, plan["timing"]["audio"]["duration"], None)
+    times = aligned_times(groups, timings, plan["timing"]["audio"]["duration"], None, [f.get("host_inset", 0) for f in previous["frames"]])
     frames, offset = [], 0
     for number, (old_frame, group, (start, end)) in enumerate(zip(previous["frames"], groups, times), 1):
-        frame = {key: old_frame[key] for key in ("format", "episode", "scene", "visual", "music") if key in old_frame}
+        frame = {key: old_frame[key] for key in ("format", "episode", "scene", "visual", "music", "host_inset") if key in old_frame}
         frame.update(number=number, start=round(start, 3), end=round(end, 3), sentences=group,
                      sentence_timings=copy.deepcopy(timings[offset:offset + len(group)]))
         frames.append(frame)

@@ -180,12 +180,64 @@ async function shotErrors(page) {
   if (errs.length) { console.log(`Shot errors (${errs.length}): the check cannot see these shots, fix them first:`); [...new Set(errs)].slice(0, 20).forEach((e) => console.log('  ' + e)); process.exitCode = 1; }
   return errs.length;
 }
+// Text that melts into the picture under it (user, 26 November 2026: «часто зливається з фоном… одразу має бути так,
+// щоб воно не зливалось»): each sampled frame is drawn twice, with and without its letters, and every line's colour is
+// measured against the picture right under it, as the viewer sees it (the style's grade included). The contrast ratio is
+// WCAG's; a line is compared with the dark and the light end of its background (25th and 75th percentile of luminance),
+// the worse of the two counts. A shadow or outline under the letters earns a little.
+// small lines need more than big ones (WCAG asks 4.5:1 of normal text and 3:1 of large): under 40 px of a 1080p frame 3.5:1
+const MIN_CONTRAST = 2.6, MIN_CONTRAST_SMALL = 3.5, SMALL_PX = 40, SHADOW_BONUS = 0.4;
+const minContrast = (px) => (px && px < SMALL_PX ? MIN_CONTRAST_SMALL : MIN_CONTRAST);
+async function textPass(page, frames) {
+  const out = [];
+  for (let i = 0; i < frames.length; i += 20) out.push(...await page.evaluate(async ([list, bonus]) => {
+    const res = [], ch = new MessageChannel(), turn = () => new Promise(r => { ch.port1.onmessage = r; ch.port2.postMessage(0); });
+    const main = document.getElementById('main'), mg = main.getContext('2d', { willReadFrequently: true });
+    const probe = document.createElement('canvas').getContext('2d');
+    const rgba = (c) => { probe.fillStyle = '#000'; probe.fillStyle = c; const v = probe.fillStyle; if (v[0] === '#') return [1, 3, 5].map(k => parseInt(v.slice(k, k + 2), 16)).concat(1); const m = v.match(/[\d.]+/g).map(Number); return [m[0], m[1], m[2], m[3] ?? 1]; };
+    const lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+    const lum = (r, g, b) => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+    const ratio = (a, b) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    for (const f of list) {
+      window.TEXT_LOG = []; window.renderFrame(f); const log = window.TEXT_LOG; window.TEXT_LOG = null;
+      const boxes = log.filter(b => b.str.trim() && b.op > 0.5 && b.x1 > 0 && b.x0 < b.W && b.y1 > 0 && b.y0 < b.H);
+      const contrast = [];
+      if (boxes.length) {
+        window.__TEXT_HIDE = true; window.renderFrame(f); window.__TEXT_HIDE = false;
+        for (const b of boxes) {
+          const x0 = Math.max(0, Math.floor(b.x0)), y0 = Math.max(0, Math.floor(b.y0)), x1 = Math.min(b.W, Math.ceil(b.x1)), y1 = Math.min(b.H, Math.ceil(b.y1));
+          if (x1 - x0 < 4 || y1 - y0 < 4) continue;
+          const d = mg.getImageData(x0, y0, x1 - x0, y1 - y0).data, L = [], acc = [0, 0, 0];
+          const step = Math.max(1, Math.floor(Math.sqrt((x1 - x0) * (y1 - y0) / 4000))) * 4;
+          for (let k = 0; k < d.length; k += step) { L.push(lum(d[k], d[k + 1], d[k + 2])); acc[0] += d[k]; acc[1] += d[k + 1]; acc[2] += d[k + 2]; }
+          if (!L.length) continue;
+          L.sort((p, q) => p - q); const n = L.length, mean = acc.map(v => v / n);
+          const [r, g, bl, a] = rgba(b.col), op = Math.min(1, a * b.op);
+          const tl = lum(r * op + mean[0] * (1 - op), g * op + mean[1] * (1 - op), bl * op + mean[2] * (1 - op));
+          const worst = Math.min(ratio(tl, L[Math.floor(n * 0.25)]), ratio(tl, L[Math.floor(n * 0.75)]));
+          // a busy picture (city lights, stars, foliage) can pass on average and still eat the letters: the share of the
+          // background about as bright as the text itself
+          const clash = L.filter(v => ratio(tl, v) < 1.8).length / n;
+          contrast.push({ str: b.str, ratio: +(worst + (b.sh ? bonus : 0)).toFixed(2), clash: +clash.toFixed(2), px: Math.round(b.px * 1080 / b.H) });
+        }
+      }
+      res.push({ log, contrast }); await turn();
+    }
+    return res;
+  }, [frames.slice(i, i + 20), SHADOW_BONUS]));
+  return out;
+}
 const MIN_TEXT = 30;   // the smallest readable text, in pixels of a 1080-line frame
 async function textCheck() {
   const browser = await chromium.launch(LAUNCH); const page = await openPlayer(browser); const fps = FPS;
   const total = await page.evaluate('window.TOTAL_FRAMES'), step = stepOf('text-check', 0.25);
   const hits = [], small = [];
-  const [fa, fb] = frameRange(total), frames = sampled(fa, fb, step), logs = await drawLogs(page, 'TEXT_LOG', frames);
+  const [fa, fb] = frameRange(total), frames = sampled(fa, fb, step), pass = await textPass(page, frames), logs = pass.map(p => p.log);
+  const low = [];
+  for (const [n, f] of frames.entries()) for (const c of pass[n].contrast) if (c.ratio < minContrast(c.px)) low.push({ t: +(f / fps).toFixed(2), str: c.str, ratio: c.ratio, px: c.px });
+  // every measured line with its lowest ratio, for tuning the threshold: build/text_contrast.json
+  const seen = {}; for (const p of pass) for (const c of p.contrast) seen[c.str] = [Math.min(seen[c.str]?.[0] ?? 99, c.ratio), c.px, Math.max(seen[c.str]?.[2] ?? 0, c.clash)];
+  fs.writeFileSync(path.join(BUILD, 'text_contrast.json'), JSON.stringify(seen, null, 1));
   for (const [n, f] of frames.entries()) {
     const log = logs[n];
     for (const b of log) {
@@ -199,13 +251,21 @@ async function textCheck() {
   }
   const smallRuns = []; for (const h of small) { const r = smallRuns.find((x) => x.str === h.str && h.t - x.to <= step / fps + 1e-6); if (r) { r.to = h.t; r.px = Math.min(r.px, h.px); } else smallRuns.push({ str: h.str, from: h.t, to: h.t, px: h.px }); }
   const tiny = smallRuns.filter((r) => r.to - r.from + step / fps >= 1.0);
+  // a line that melts into its background for half a second or longer is the bug; a moment while the picture passes is not
+  const lowRuns = []; for (const h of low) { const r = lowRuns.find((x) => x.str === h.str && h.t - x.to <= step / fps + 1e-6); if (r) { r.to = h.t; r.ratio = Math.min(r.ratio, h.ratio); } else lowRuns.push({ str: h.str, from: h.t, to: h.t, ratio: h.ratio }); }
+  const faint = lowRuns.filter((r) => r.to - r.from + step / fps >= 0.5);
   const broken = await shotErrors(page);
   await browser.close();
   const runs = []; for (const h of hits) { const r = runs.find((x) => x.str === h.str && h.t - x.to <= step / fps + 1e-6); if (r) { r.to = h.t; r.last = h.box; } else runs.push({ str: h.str, from: h.t, to: h.t, box: h.box, last: h.box, canvas: h.canvas }); }
   // text that crosses the edge while the camera travels past it is a normal pan; text that stays cut is the bug:
   // FAIL when it stays cut for a second or longer
   runs.forEach((r) => { r.fail = r.to - r.from + step / fps >= 1.0; });
-  fs.writeFileSync(path.join(BUILD, 'text_check.json'), JSON.stringify({ cut: runs, small: tiny }, null, 1));
+  fs.writeFileSync(path.join(BUILD, 'text_check.json'), JSON.stringify({ cut: runs, small: tiny, faint }, null, 1));
+  if (faint.length) {
+    console.log(`Text check: FAIL, ${faint.length} text(s) melt into the picture under them (contrast below ${MIN_CONTRAST}:1, or ${MIN_CONTRAST_SMALL}:1 for text under ${SMALL_PX} px, for half a second or longer). Fix each by what suits its place: move it to a calmer, plainer part of the picture, give it a colour that stands out against that very background, add an outline (stroke) or a stronger shadow, or a soft backing behind it:`);
+    faint.slice(0, 40).forEach((r) => console.log(`  ${r.from.toFixed(2)}–${r.to.toFixed(2)} s  "${r.str}"  ${r.ratio}:1`));
+    process.exitCode = 1;
+  }
   if (tiny.length) {
     console.log(`Text check: FAIL, ${tiny.length} text(s) smaller than ${MIN_TEXT} px of a 1080p frame for a second or longer (make them at least ${MIN_TEXT}):`);
     tiny.slice(0, 40).forEach((r) => console.log(`  ${r.from.toFixed(2)}–${r.to.toFixed(2)} s  "${r.str}"  ${r.px} px`));

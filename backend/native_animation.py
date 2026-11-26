@@ -82,6 +82,11 @@ def place(ctx, spec: dict) -> None:
     # PNG props live to the frame's end in the channel's own motion, nothing comes in during its last second (asset_motion)
     import asset_motion
     ctx.report.extend(f'кадр {number}: {note}' for note in asset_motion.enliven_layers(ctx, frame, prepared, duration, start))
+    camera = camera_move(spec.get('camera'))
+    if camera:
+        for part in prepared:
+            apply_camera(part, camera, duration, fps)
+        ctx.report.append(f'кадр {number}: камера {camera[0]} {round(camera[1] * 100)}%')
     for part in prepared:
         store.validated_keyframes(part.get('keyframes', []), float(part['duration']))
     # The generated backing colour alone never counts as a completed animation frame.
@@ -114,6 +119,62 @@ def place(ctx, spec: dict) -> None:
         ctx.actions.extend({'type': 'delete_clip', 'payload': {'clip_id': c['id']}} for c in existing['clips'])
     ctx._native_frames = getattr(ctx, '_native_frames', set()) | {number}
     ctx.report.append(f'кадр {number}: анімація наживо, {len(parts)} шарів, без рендеру відео')
+
+
+# A gentle move of the whole frame, every layer together, so a still picture with animation on top never stands dead
+# (user, 26 November 2026: «кадри… мертві, на місці стоять… трошечки якийсь рух постійно… приближення, віддалення…
+# зліва направо… щоб це сильно не нагружало… по токенах і швидкості»). The agent names it in one word; the Studio
+# recomputes each layer's keyframes, so a marker stays on its place in the picture. The frame's black backing stays.
+CAMERA_MOVES = ('zoom_in', 'zoom_out', 'pan_left', 'pan_right', 'pan_up', 'pan_down')
+CAMERA_AMOUNT = .05
+
+
+def camera_move(value):
+    if value in (None, False, '', 'none'):
+        return None
+    move, amount = (value.get('move'), value.get('amount', CAMERA_AMOUNT)) if isinstance(value, dict) else (value, CAMERA_AMOUNT)
+    if move not in CAMERA_MOVES:
+        raise store.StudioError('camera: ' + ', '.join(CAMERA_MOVES), 400)
+    return move, store.finite_float(amount, .02, .12, 'Невірна сила руху камери')
+
+
+def camera_at(camera, p):
+    """Scale and shift of the whole frame at progress p (0…1): a pan keeps a margin of half its travel on each side."""
+    move, a = camera
+    if move == 'zoom_in':
+        return 1 + a * p, 0., 0.
+    if move == 'zoom_out':
+        return 1 + a * (1 - p), 0., 0.
+    shift = a / 2 - a * p          # from +a/2 to -a/2: the picture slides left as the camera pans right
+    dx = shift if move == 'pan_right' else -shift if move == 'pan_left' else 0.
+    dy = shift if move == 'pan_down' else -shift if move == 'pan_up' else 0.
+    return 1 + a, dx, dy
+
+
+def apply_camera(part, camera, duration, fps):
+    import montage_ops
+    local, length = float(part['start']), float(part['duration'])
+    marks = {0.0, length} | {float(k['time']) for k in part.get('keyframes', [])}
+    step = max(.25, length / 120)
+    marks |= {round(i * step, 4) for i in range(int(length / step) + 1)}
+    known = sorted({float(k['time']) for k in part.get('keyframes', [])})
+    if part.get('easing', 'linear') != 'linear':          # an eased entrance keeps its curve, sampled every two frames
+        for a, b in zip(known, known[1:]):
+            n = min(12, max(1, int((b - a) * fps / 2)))
+            marks |= {a + (b - a) * i / n for i in range(n + 1)}
+    frames = []
+    for t in sorted(m for m in marks if 0 <= m <= length + 1e-9):
+        t = min(t, montage_ops.end_time(length))
+        s, dx, dy = camera_at(camera, (local + t) / duration if duration else 0)
+        x, y = (montage_ops.keyframe_value(part, k, t) for k in ('x', 'y'))
+        frames.append({'time': round(t, 4), 'x': .5 + (x - .5) * s + dx, 'y': .5 + (y - .5) * s + dy,
+                       'scale': montage_ops.keyframe_value(part, 'scale', t) * s,
+                       'opacity': montage_ops.keyframe_value(part, 'opacity', t)})
+    unique = {}
+    for f in frames:
+        unique[f['time']] = f
+    part['keyframes'] = list(unique.values())[:200]
+    part['easing'] = 'linear'
 
 
 def visible_opacity(part, local):
