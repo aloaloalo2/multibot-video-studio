@@ -378,6 +378,10 @@ def chain(pool, start: float, length: float, used: dict, last=None) -> tuple:
     return out, last
 
 
+LETTER_ENTRANCES = ('letters_fade', 'letters_up', 'letters_blur')   # entrances that type a text letter by letter
+KEYS_DELAY = .2   # seconds after the first letter the keys start: they followed the letters a moment too early
+
+
 def typing(ctx, spec=None):
     """A typing sound under every text typed letter by letter and a pencil under every text written word by word or by
     motion code (user, 25 November 2026: «якщо ми друкуємо текст… озвучка має бути друкування тексту», «часто щось
@@ -397,16 +401,18 @@ def typing(ctx, spec=None):
             continue
         for clip in frame['clips']:
             entrance = (clip.get('word_entrance') or {}).get('type', '')
-            # a text insert sounds like a keyboard, whatever its entrance; a pencil only where a hand, a pen or chalk
-            # writes on screen (user, 25 November 2026: «коли текстові вставки то там краще підходить звук клавіатури а
-            # коли рука на екрані шось пише то звук олівця»)
+            # keys only under a text that comes in letter by letter, a little after its first letter; a text that
+            # comes in word by word or whole is not typed and has no keys (user, 26 November 2026: «клацання
+            # клавіатурою… засильно рано… Там воно не друкується. Коли по буквах появляється, тоді да. Але трошки з
+            # затримкою»); a pencil only where a hand, a pen or chalk writes on screen
             if clip.get('kind') == 'text' and clip.get('text_words'):
+                if entrance not in LETTER_ENTRANCES:
+                    continue
                 words, pool = clip['text_words'], keys
-            elif clip.get('content_type') == 'code' and clip.get('code_words'):
+            elif clip.get('content_type') == 'code' and clip.get('code_words') and HAND.search(str(clip.get('code') or '')):
                 # code_words are the voice's words the code times itself by; only those it really writes on screen (its
-                # own quoted text) sound like writing (Andromeda 118, 25 November 2026: the code writes «Milky Way» and
-                # «Andromeda», not the ten seconds of speech)
-                words, pool = written_words(clip), pencils if HAND.search(str(clip.get('code') or '')) else keys
+                # own quoted text) sound like writing (Andromeda 118, 25 November 2026)
+                words, pool = written_words(clip), pencils
             else:
                 continue
             if not pool:
@@ -414,7 +420,9 @@ def typing(ctx, spec=None):
             begin, end = float(clip['start']), min(float(clip['start']) + float(clip['duration']), total - .1)
             for a, b in writing_runs(words, begin):
                 if begin <= a < end:
-                    runs.append((a, min(b, end), pool, frame['number']))
+                    # the keys follow the letters a moment behind, the whole run shifted (user, 26 November 2026)
+                    lag = KEYS_DELAY if pool is keys else 0.0
+                    runs.append((a + lag, min(b + lag, end), pool, frame['number']))
     used, busy, last = {}, -1.0, None
     for a, b, pool, number in sorted(runs, key=lambda r: r[0]):
         a = max(a, busy)
@@ -620,8 +628,10 @@ def appear(ctx, spec=None):
             pool = 'hand' if event.get('hand') and pools['hand'] else 'write'
             if not pools[pool]:
                 continue
-            a = max(t, busy)
-            length = min(float(event.get('dur', 0) or 0), frame[2] - a)
+            # a text the scan saw grow letter by letter is typed: its keys come a little after the first letter
+            start = t + (KEYS_DELAY if pool == 'write' else 0.0)
+            a = max(start, busy)
+            length = min(start + float(event.get('dur', 0) or 0) - a, frame[2] - a)
             if length < .3:
                 continue
             sounds, last[pool] = chain(pools[pool], a, length, used, last.get(pool))

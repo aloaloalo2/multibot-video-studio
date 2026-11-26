@@ -272,10 +272,10 @@ class SoundSettingsTest(unittest.TestCase):
             soundtrack.typing(ctx)
             cues = [a['payload'] for a in ctx.actions if a['type'] == 'add_clip']
             # from the first letter, the sounds one after another for as long as the words keep coming (each whole), then
-            # again with the next run of words; a text insert sounds like a keyboard whatever its entrance (user, 25
-            # November 2026: «коли текстові вставки то там краще підходить звук клавіатури»), a popped word too
-            self.assertEqual([c['start'] for c in cues], [5.2, 6.0, 8.9, 11.1])
-            self.assertTrue(all(c['title'].startswith(soundtrack.TYPING_PREFIX + 'K002') for c in cues[:3]))
+            # again with the next run of words, a little after the first letter; a popped word is not typed and stays
+            # silent (user, 26 November 2026: «Коли по буквах появляється, тоді да. Але трошки з затримкою»)
+            self.assertEqual([c['start'] for c in cues], [5.4, 6.2, 9.1])
+            self.assertTrue(all(c['title'].startswith(soundtrack.TYPING_PREFIX + 'K002') for c in cues))
             self.assertTrue(all(c['duration'] >= .5 for c in cues))   # played whole, never cut to a word
             ctx.project['tracks'][0]['clips'] += [dict(c, id=f'ty-{i}') for i, c in enumerate(cues)]
             ctx.actions.clear(); soundtrack.typing(ctx)
@@ -283,7 +283,7 @@ class SoundSettingsTest(unittest.TestCase):
         off = {'effects': {'enabled': True, 'categories': ['click'], 'version': sound.EFFECTS_VERSION}}
         with patch.object(sound, 'saved_for_project', return_value=off), patch.object(soundtrack.sfx_library, 'catalog', return_value=[]):
             soundtrack.typing(ctx)
-        self.assertEqual(sorted(a['payload']['clip_id'] for a in ctx.actions if a['type'] == 'delete_clip'), ['ty-0', 'ty-1', 'ty-2', 'ty-3'])
+        self.assertEqual(sorted(a['payload']['clip_id'] for a in ctx.actions if a['type'] == 'delete_clip'), ['ty-0', 'ty-1', 'ty-2'])
 
 
 class AccentSideFieldTest(unittest.TestCase):
@@ -380,6 +380,6 @@ class WritingAndAppearanceSoundsTest(unittest.TestCase):
         # 11.5 is too close to 11.0; 22.0 is outside the Razgon frames
         self.assertEqual(plain, [(11.0, 'glint'), (13.0, 'whoosh'), (14.5, 'pop')])
         writing = [c for c in cues if c.get('from_start')]
-        self.assertEqual(writing[0]['t'], 16.0)
+        self.assertEqual(writing[0]['t'], 16.0 + soundtrack.KEYS_DELAY)   # the keys a moment after the first letter
         self.assertLessEqual(writing[-1]['t'] + writing[-1]['dur'], 19.9)
 
