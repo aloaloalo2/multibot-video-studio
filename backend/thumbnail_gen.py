@@ -409,6 +409,20 @@ OWN_STYLE_OVERRIDE = (
     "23 November 2026: «старатися, щоб кожна прев'ю була унікальна»).\n")
 
 
+# Every clone comes out a little better designed than its source while staying recognisably close to it (user, 26 November
+# 2026: «якщо ми копіюємо чийсь стиль… ми робимо його краще… сучасніше… гарніший, делікатніший, приємніший, професійніший…
+# але і залишатися як в оригінала має бути схоже… по даних, по тексту, по орієнтовній композиції або ж по кольорам»).
+DESIGN_UPGRADE = (
+    "\nDESIGN UPGRADE, ALWAYS: the new thumbnail must look clearly more modern, polished and professional than the source, "
+    "while a viewer still recognises it as the same idea. Keep close to the source: the same facts and lettering, roughly the "
+    "same composition (where the subject, the main object and the text sit) and a related colour palette. Improve the craft: "
+    "cleaner and more confident typography with a clear hierarchy and generous spacing, crisp edges and good kerning; refined "
+    "colour harmony with controlled saturation and contrast instead of garish or muddy colours; deliberate cinematic lighting "
+    "and depth; one clear focal point with breathing room; no clutter, cheap effects, heavy bevels, crude outlines, low-resolution "
+    "stock look or dated clip-art. If the source is badly designed, fix what is weak and keep what works. The improvement is "
+    "in execution, not in a different idea, story or layout.\n")
+
+
 def clone_brief(title: str, wishes: str, name: str, refs: list[Path], own_style: bool = False) -> str:
     """One isolated reference-adaptation contract for all prompt writers, without new-idea rules."""
     import idea_reference
@@ -416,6 +430,7 @@ def clone_brief(title: str, wishes: str, name: str, refs: list[Path], own_style:
     return ("Write the English image-generation prompt for an original image built from the reference idea. "
             "Inspect the attached images (use Read for these local image files if available):\n" + images + "\n\n"
             + idea_reference.thumbnail_rules(title, name)
+            + DESIGN_UPGRADE
             + (OWN_STYLE_OVERRIDE if own_style else "")
             + "\nAUTHOR'S EXPLICIT CHANGES FOR THIS CLONE ONLY:\n" + (wishes.strip() or 'None. Keep its idea and wording; create original visuals.')
             # the lettering speaks the new video's language: a French channel cloning a Russian thumbnail kept «МЛРД СОЛНЦ»

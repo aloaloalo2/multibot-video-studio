@@ -315,6 +315,13 @@ class ThumbnailTest(unittest.TestCase):
         self.assertLess(mine.index("Keep the same topic"), mine.index("OUR STYLE OVERRIDES"))   # said last, it wins
         self.assertNotIn("OUR STYLE OVERRIDES", thumbnail_gen.clone_brief("T", "", "v1.png", []))
 
+    def test_every_clone_is_better_designed_yet_close_to_its_source(self):
+        # user, 26 November 2026: «ми робимо його краще… сучасніше… але… схоже, по тексту, по композиції або по кольорам»
+        brief = thumbnail_gen.clone_brief("T", "", "v1.png", [])
+        self.assertIn("DESIGN UPGRADE, ALWAYS", brief)
+        self.assertIn("roughly the same composition", brief)
+        self.assertLess(brief.index("Keep the same topic"), brief.index("DESIGN UPGRADE"))
+
     def test_codex_without_a_picture_hands_the_drawing_to_openrouter(self):
         # user, 22 November 2026: «кодекс в першу чергу… якшо не то опен роутер на замене»
         thumbnail_gen.ACTIVE.add(self.project["id"])
