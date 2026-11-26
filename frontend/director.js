@@ -532,7 +532,8 @@ function fillMake(make){
   const working=['requested','in_progress'].includes(request?.status);
   // a run the subscription limit stopped is a pause: what it made stays, and «Продовжити кадри» picks its session up
   // a limit or a login that expired (claude auth login) pauses: «Продовжити» goes on from the frames made
-  const paused=request?.status==='failed'&&(request.paused||request.limit||claudeStopped(request.error));
+  // a run that stopped with frames made and frames left goes on too (26 November 2026: «не має вставати намертво»)
+  const paused=request?.status==='failed'&&(request.paused||request.limit||claudeStopped(request.error)||(made.size>0&&floor<frames.length));
   // Why the button can not start yet, in the author's words; empty when it can.
   const blocked=!state.project.production?.plan_ready?(state.plan?.timing?.status==='audio_synced'?(state.project.production?.reason || 'Сценарій розходиться з озвучкою. Додайте озвучку, що відповідає тексту.'):state.plan?.timing?.status==='script_estimate'?'Кадри почнуться, щойно озвучку буде готово й розпізнано.':'Спершу додайте озвучку: кадри підлаштуються під неї.')
     :state.plan?.director_stale?'Сценарій розходиться з озвучкою. Режисер має заново розбити кадри.'

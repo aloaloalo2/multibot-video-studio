@@ -54,6 +54,11 @@ class FrameProgressTest(unittest.TestCase):
         self.assertEqual(frame_progress.frame_takes([{'id':'e01','start':0,'end':12,
             'parts':[{'id':'e01','start':0},{'id':'e02','start':5},{'id':'e03','start':8}]}],5,8),['e02'])
 
+    def test_a_neighbours_shot_rounded_into_the_frame_is_not_its_take(self):
+        shots = [{'id': 'f002s01', 'start': 2.76, 'end': 12.92}, {'id': 'f003s01', 'start': 12.92, 'end': 32.36}]
+        self.assertEqual(frame_progress.frame_takes(shots, 12.91, 32.35), ['f003s01'])   # 0.01 s of frame 2's shot: rounding
+        self.assertEqual(frame_progress.frame_takes(shots, 12.5, 32.35), ['f002s01', 'f003s01'])   # a real overlap stays
+
     def test_an_episode_without_razgon_has_no_drawn_frames(self):
         with patch.object(store, "load_project", return_value={"id": "p" * 24, "episode_path": self.tmp.name}):
             self.assertEqual(frame_progress.drawn("p" * 24), [])

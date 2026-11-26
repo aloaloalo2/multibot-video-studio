@@ -69,6 +69,14 @@ class ProductionTest(unittest.TestCase):
             with self.assertRaises(store.StudioError):production.resume(self.project['id'])
         start.assert_not_called()
 
+    def test_a_failed_run_with_frames_left_continues(self):
+        self.project['production_request'].update(status='failed',frames=3,error='Поточний пакет кадрів не завершений')
+        with patch.object(store,'made_frames',return_value=[1,2]),patch.object(production,'drawn',return_value=False), \
+             patch.object(production,'start') as start:
+            production.resume(self.project['id'])
+        start.assert_called_once()
+        self.assertIn('незроблені кадри', start.call_args.args[1])
+
     def test_pause_preserves_session_montage_and_can_resume(self):
         pid=self.project['id'];before=json.loads(json.dumps(self.project['tracks']))
         self.project['production_request']['status']='in_progress'

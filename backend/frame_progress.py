@@ -31,17 +31,24 @@ def taken(text: str) -> set[str]:
     return ids
 
 
+# A neighbour's shot that reaches into a frame by less than half a video frame is the edge's rounding, not part of it
+# (26 November 2026: Antropov's frame 3 began at 12.91 s and frame 2's shot ended at 12.92 s, rounded to whole video
+# frames; frame 2 was a native animation whose Razgon shot nobody writes, so frame 3 never counted as drawn and every
+# session stopped with «пакет кадрів не завершений»). Half a frame at 24 fps.
+EDGE = .021
+
+
 def frame_takes(shots: list[dict], start: float, end: float) -> list[str]:
-    """Only the takes whose own intervals overlap this accepted Studio frame."""
+    """Only the takes whose own intervals overlap this accepted Studio frame by more than an edge's rounding."""
     result = []
     for shot in shots:
-        if shot['start'] >= end - .001 or shot['end'] <= start + .001:
+        if shot['start'] >= end - EDGE or shot['end'] <= start + EDGE:
             continue
         parts = shot.get('parts') or [shot]
         for index, part in enumerate(parts):
             a = max(shot['start'], part.get('start', shot['start']))
             b = min(shot['end'], parts[index + 1]['start'] if index + 1 < len(parts) else shot['end'])
-            if a < end - .001 and b > start + .001 and part['id'] not in result:
+            if a < end - EDGE and b > start + EDGE and part['id'] not in result:
                 result.append(part['id'])
     return result
 

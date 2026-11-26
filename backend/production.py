@@ -910,6 +910,16 @@ RESUME = ("Ліміт підписки оновився. Продовж робо
           "доведи решту кадрів до кінця з тією ж перевіркою якості й зроби крок 4 без рендеру відео.")
 
 
+def partly_made(pid: str, project: dict, request: dict) -> bool:
+    """Some of the requested frames are made and some are not."""
+    try:
+        wanted = set(request.get('repair_frames') or range(1, int(request.get('frames') or 0) + 1))
+        made = set(store.made_frames(project, store.load_project_plan(pid))) & wanted
+    except (store.StudioError, OSError, ValueError, KeyError, TypeError):
+        return False
+    return bool(made) and made != wanted
+
+
 def resume(pid: str) -> dict:
     """Continue saved frames with a compact handoff, preserving completed work and author wishes."""
     with LOCK:
@@ -919,23 +929,30 @@ def resume(pid: str) -> dict:
     request = project.get("production_request") or {}
     review_pending = False
     saved_review = request.get('quality') or {}
-    if request.get('status') == 'failed' and saved_review.get('frames'):
-        current_review = production_quality.check(project, {**request, 'review_frames': saved_review['frames']})
-        review_pending = bool(current_review.get('pending_review'))
-        if current_review.get('passed') and drawn(pid,int(request.get('frames') or 0),request.get('repair_frames')):
-            final_review=production_quality.check(project,{**request,'review_frames':request.get('repair_frames') or list(range(1,int(request['frames'])+1))})
-            if final_review.get('passed'):
-                set_request(pid,status='done',error=None,paused=False,limit=False,quality=final_review,finished_at=time.time())
-                if not request.get('repair_frames'):
-                    razgon_sound.start(pid, "production")   # the bed a pause stopped is laid now
-                return store.load_project(pid)
-    # A completed batch with stale visual receipts can resume from its saved files.
-    if request.get("status") != "failed" or not (review_pending or request.get("paused") or request.get("limit") or director.limit_stop({"result": request.get("error")})):
+    failed = request.get('status') == 'failed'
+    if failed and saved_review.get('frames'):
+        review_pending = bool(production_quality.check(project, {**request, 'review_frames': saved_review['frames']}).get('pending_review'))
+    if failed and drawn(pid,int(request.get('frames') or 0),request.get('repair_frames')):
+        # every frame is made: the run closes here when they pass, or goes on only to look at the ones waiting for a look
+        final_review=production_quality.check(project,{**request,'review_frames':request.get('repair_frames') or list(range(1,int(request['frames'])+1))})
+        if final_review.get('passed'):
+            set_request(pid,status='done',error=None,paused=False,limit=False,quality=final_review,finished_at=time.time())
+            if not request.get('repair_frames'):
+                razgon_sound.start(pid, "production")   # the bed a pause stopped is laid now
+            return store.load_project(pid)
+        review_pending = review_pending or bool(final_review.get('pending_review'))
+    # A run stopped part way with frames made and frames left goes on from its saved files (user, 26 November 2026: the
+    # card stood at «Зупинено · 67 з 72» and «Продовжити» answered «Агент не стоїть на паузі»: «не має вставати
+    # намертво»). A run that made nothing, or whose made frames have a real defect, still waits for the author.
+    unfinished = failed and partly_made(pid, project, request)
+    if not failed or not (review_pending or unfinished or request.get("paused") or request.get("limit") or director.limit_stop({"result": request.get("error")})):
         raise store.StudioError("Агент не стоїть на паузі")
     notes=("Заверши актуальний візуальний огляд готових кадрів і продовж решту зі збережених файлів. "
            "Збережи готові сцени й матеріали, без повторного створення схвалених кадрів і без рендеру відео.") if review_pending else (
            "Автор просить продовжити після паузи. Продовж роботу з того місця, де зупинився. "
-           "Збережи готові кадри й матеріали та закінчи решту без рендеру відео.") if request.get('paused') else RESUME
+           "Збережи готові кадри й матеріали та закінчи решту без рендеру відео.") if request.get('paused') else (
+           "Попередній запуск зупинився, не довівши всі кадри. Не переробляй готові: доведи до кінця лише незроблені кадри "
+           "зі збережених файлів, з тією ж перевіркою якості, без рендеру відео.") if unfinished and not request.get('limit') else RESUME
     return fix(pid, notes, handoff=True)
 
 
