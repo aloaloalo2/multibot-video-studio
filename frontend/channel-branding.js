@@ -64,7 +64,8 @@ function brandingSections(channel,projectDefaults=''){
       <div class="channel-typeface"><span id="channel-font-label">Шрифт каналу</span><select id="style-title-font" hidden>${studioFontOptionsHtml()}</select>
         <details class="channel-font-picker"><summary aria-labelledby="channel-font-label channel-font-current"><span id="channel-font-current"></span><span aria-hidden="true">⌄</span></summary><div class="channel-font-menu" role="listbox" aria-labelledby="channel-font-label"></div></details></div>
       ${/* two more fonts to combine with the main one in motion design and captions (user, 26 November 2026) */''}
-      <div class="channel-typeface-more"><label>Другий шрифт<select id="style-second-font"><option value="">Немає</option>${studioFontOptionsHtml()}</select></label><label>Додатковий шрифт<select id="style-extra-font"><option value="">Немає</option>${studioFontOptionsHtml()}</select></label></div>
+      ${[['second','Другий шрифт'],['extra','Додатковий шрифт']].map(([key,label])=>`<div class="channel-typeface"><span id="channel-${key}-font-label">${label}</span><select id="style-${key}-font" hidden><option value="">Немає</option>${studioFontOptionsHtml()}</select>
+        <details class="channel-font-picker"><summary aria-labelledby="channel-${key}-font-label channel-${key}-font-current"><span id="channel-${key}-font-current"></span><span aria-hidden="true">⌄</span></summary><div class="channel-font-menu" role="listbox" aria-labelledby="channel-${key}-font-label"></div></details></div>`).join('')}
       <div class="logo-preview" id="logo-preview"><canvas id="style-card-text" width="1920" height="1080" aria-hidden="true" hidden></canvas><img id="logo-preview-image" class="logo-mark" alt=""><span id="style-stage-state" class="style-stage-state" role="status" aria-live="polite"></span></div>
       <div><p id="style-caption" class="style-caption"></p>
         <div id="style-strip" class="style-strip" role="radiogroup" aria-label="Стиль анімації"></div><input id="style-copy-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
@@ -326,11 +327,30 @@ function bindBranding(channel){
       await loadStyles(false);
     }catch(error){busy=false;stage.textContent=error.message;renderStrip();}
   });
-  for(const [id,key] of [['style-second-font','second_font_family'],['style-extra-font','extra_font_family']]){
-    const select=$(id),saved=channel.settings?.typography?.[key]||'';
+  // the second and extra fonts pick the same way as the channel's font, each name drawn in its own font (26 November 2026)
+  for(const [key,field] of [['second','second_font_family'],['extra','extra_font_family']]){
+    const select=$(`style-${key}-font`),current=$(`channel-${key}-font-current`),picker=current.closest('details');
+    const menu=picker.querySelector('.channel-font-menu'),trigger=picker.querySelector('summary');
+    const saved=channel.settings?.typography?.[field]||'';
     select.value=[...select.options].some(option=>option.value===saved)?saved:'';
-    const paint=()=>{select.style.fontFamily=select.value?JSON.stringify(select.value)+', sans-serif':'';};
-    select.addEventListener('change',paint);paint();
+    const row=option=>{
+      const button=document.createElement('button');button.type='button';button.setAttribute('role','option');button.dataset.font=option.value;
+      button.textContent=option.textContent;if(option.value)button.style.fontFamily=JSON.stringify(option.value)+', sans-serif';
+      button.addEventListener('click',()=>{const changed=select.value!==option.value;select.value=option.value;
+        if(changed)select.dispatchEvent(new Event('change',{bubbles:true}));picker.open=false;trigger.focus();});
+      menu.append(button);
+    };
+    for(const child of select.children){
+      if(child.tagName==='OPTION'){row(child);continue;}
+      const label=document.createElement('div');label.className='channel-font-category';label.textContent=child.label;menu.append(label);
+      for(const option of child.children)row(option);
+    }
+    const rows=[...menu.querySelectorAll('button')];
+    const show=()=>{current.textContent=select.selectedOptions[0]?.textContent||'Немає';current.style.fontFamily=select.value?JSON.stringify(select.value)+', sans-serif':'';
+      for(const item of rows)item.setAttribute('aria-selected',String(item.dataset.font===select.value));};
+    select.addEventListener('change',show);show();
+    picker.addEventListener('toggle',()=>{if(!picker.open)return;const at=rows.find(item=>item.dataset.font===select.value);at?.focus({preventScroll:true});if(at)menu.scrollTop=Math.max(0,at.offsetTop-menu.clientHeight/2);});
+    picker.addEventListener('focusout',event=>{if(event.relatedTarget&&!picker.contains(event.relatedTarget))picker.open=false;});
   }
   const fontSelect=$('style-title-font'),fontCurrent=$('channel-font-current');
   const fontPicker=fontCurrent.closest('details'),fontMenu=fontPicker.querySelector('.channel-font-menu');

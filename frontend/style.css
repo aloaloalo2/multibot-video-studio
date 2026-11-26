@@ -3499,7 +3499,6 @@ select option{background:#232327;color:#f1f1f2}
 .layer-volume-presets button{flex:1;height:22px;padding:0;border:0;border-radius:5px;background:#26262b;color:#9a9ca4;font-size:11px;cursor:pointer;font-variant-numeric:tabular-nums}
 .layer-volume-presets button:hover{background:#303036;color:#e3e5eb}
 .layer-volume-presets button.active{background:#3a3424;color:#ffcf59}
-/* the channel's second and extra fonts under the main one (26 November 2026) */
-.channel-typeface-more{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:8px 0 4px}
-.channel-typeface-more label{display:grid;gap:4px;font-size:12px;color:#9a9ca4}
-.channel-typeface-more select{font-size:14px;color:#e3e5eb}
+/* the channel's three fonts in one column of the same pickers (26 November 2026) */
+.channel-look .channel-typeface{margin-bottom:6px}
+.channel-look .channel-typeface>span:first-child{min-width:132px}
