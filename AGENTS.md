@@ -1338,7 +1338,7 @@ A host frame's zoom no longer always starts or ends on the whole picture (user, 
 
 Antropov's first frame began with thin black strips above and below (user: «починається… з рамок… це вже рахується як брак… це має бути як базове розуміння студії»). Its picture was a 792×429 cell (1.85) cut from a 16:9 sheet: the gaps trimmed unevenly, and a picture wider than the frame, contained whole, missed the frame's height until the zoom grew. Three fixes, none of them costing a model's tokens. `tools/sheet_2x2.py` cuts every landscape cell (1.6–1.96) to exactly 16:9 around its middle (`to_widescreen`); vertical cells stay. `montage_ops.place` covers the frame for pictures wider than it as well as narrower (`cover` takes the larger of the two ratios). The summary's «відкритий край» check had never run on any frame, because every frame has the studio's black ground under it and that counted as a designed field: now a strip up to 3% of the frame over a field is flagged (`agent_view.SLIVER`), a wider margin stays the frame's design. On 26 November it found three such frames in 214 full-frame photos. Tests: `backend/tests/test_uncovered_field.py`, `tools/tests/test_sheet_2x2.py`.
 
-The timeline no longer draws dashed blocks for frames not made yet (user: «нам же це не до чого»); the ruler's red stripes still mark them.
+The timeline draws dashed blocks for frames not made yet (removed and brought back the same day: «щоб я бачив, що там має бути кадр»).
 
 ## A frame run never stands dead (26 November 2026)
 
