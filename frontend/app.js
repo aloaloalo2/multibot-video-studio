@@ -1810,9 +1810,46 @@ function updateExportLock(){
    else if(!stop||stop.dataset.job!==state.job.id){stop?.remove();stop=exportStopControl(state.job.id,async updated=>{if(updated)state.job=updated;updateExportLock();await pollJob();});stop.id='export-stop';stop.dataset.job=state.job.id;$('export-open').before(stop);}
    if(stop)stop.hidden=$('export-open').hidden;}
   if(state.job){if(['queued','running','cancelling'].includes(state.job.status))state.projectExports.set(state.job.project_id,state.job);else state.projectExports.delete(state.job.project_id);updateOverviewExports();}
-  if(locked)$('save-state').textContent='● Випуск заблоковано під час експорту';
-  else if(state.project)$('save-state').textContent='';
+  // no «Випуск заблоковано під час експорту» line (user, 26 November 2026: «удали цю взагалі рядок»): the export
+  // button already says the export runs
+  if(state.project)$('save-state').textContent='';
+  updateFailedExport(locked);
   if(typeof updateProjectNextAction==='function')updateProjectNextAction();
+}
+// An export that stopped stays in sight beside the export button with «Продовжити» until a newer one starts (user,
+// 26 November 2026: «а чому цього не бачу що зупинився експ… і кнопки нема продов»): it failed at 54% while its window
+// was closed, and a passing banner was all the editor said. A new run takes the chunks and transitions already drawn.
+let failedExportFor=null,failedExportJob=null;
+async function refreshFailedExport(){
+  const id=state.project?.id;if(!id)return;
+  try{
+    const data=await api(`/api/projects/${encodeURIComponent(id)}/exports`);
+    if(state.project?.id!==id)return;
+    const latest=(data.jobs||[])[0];
+    failedExportFor=id;failedExportJob=!data.active&&latest&&['failed','error'].includes(String(latest.status))?latest:null;
+    updateFailedExport(exportIsActive());
+  }catch{}
+}
+function updateFailedExport(locked){
+  const id=state.project?.id;let chip=document.getElementById('export-failed');
+  if(id&&failedExportFor!==id){failedExportFor=id;failedExportJob=null;refreshFailedExport();}
+  const job=!locked&&failedExportFor===id?failedExportJob:null;
+  if(!job){chip?.remove();return;}
+  if(!chip||chip.dataset.job!==job.id){
+    chip?.remove();chip=document.createElement('button');chip.type='button';chip.id='export-failed';chip.className='export-failed';chip.dataset.job=job.id;
+    chip.innerHTML=`<span aria-hidden="true">⚠</span><span>Експорт зупинився на ${Math.round(Number(job.progress)||0)}% · Продовжити</span>`;
+    chip.title=String(job.error||'Експорт не завершився');
+    chip.addEventListener('click',async()=>{
+      chip.disabled=true;
+      try{const result=await api(`/api/projects/${encodeURIComponent(id)}/export`,'POST',{confirm_export:true,channel_quality:true});
+        failedExportJob=null;if(result.job&&state.project?.id===id){state.job=result.job;updateExportLock();scheduleJobPoll(0);}}
+      catch(error){chip.disabled=false;status(error.message,true);}
+    });
+  }
+  // beside the export button the author sees: the project's next step («Експорт MP4») when it shows, else the top one
+  const anchor=$('project-next-step')&&!$('project-next-step').hidden?$('project-next-step'):$('export-open');
+  if(chip.nextElementSibling!==anchor)anchor.before(chip);
+  chip.hidden=false;
 }
 function exportActions(){
   const actions=[];
@@ -1913,7 +1950,7 @@ async function pollJob(){
       target.innerHTML=`<p class="export-status-line">${!complete&&!failed&&!cancelled?exportSpinner:''}<span>${label}</span></p><div class="render-progress"><span style="width:${progress}%"></span></div><p>${progress}%</p>${estimate}<p>${detail}</p>${state.job.output_path?`<p>Файл: ${esc(state.job.output_path)}</p>`:''}${state.job.error?`<p class="render-error">${esc(state.job.error)}</p>`:''}`;
     }
     jobPollFailures=0;
-    if(complete||failed||cancelled){if(state.poll)clearTimeout(state.poll);state.poll=null;if(ownsTarget){const box=$('modal-actions');box.replaceChildren();box.hidden=true;}if(!state.project||state.project.id===state.job.project_id)status(cancelled?'Експорт скасовано.':failed?'Експорт не завершився.':'Експорт завершено.',failed);return;}
+    if(complete||failed||cancelled){if(state.poll)clearTimeout(state.poll);state.poll=null;if(ownsTarget){const box=$('modal-actions');box.replaceChildren();box.hidden=true;}if(!state.project||state.project.id===state.job.project_id)status(cancelled?'Експорт скасовано.':failed?'Експорт не завершився.':'Експорт завершено.',failed);if(state.project?.id===state.job.project_id)refreshFailedExport();return;}
     scheduleJobPoll();
   }catch(error){
     if(state.job?.id!==jobId){if(state.job)scheduleJobPoll(0);return;}

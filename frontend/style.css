@@ -3576,3 +3576,8 @@ select option{background:#232327;color:#f1f1f2}
 .preview-panel .transport button{transition:transform .15s ease}
 .preview-panel .transport button:hover:not(:disabled),.preview-panel .transport button:focus-visible{background:#33353de6;transform:scale(1.12)}
 .preview-panel .transport .preview-fullscreen:hover,.preview-panel .transport .preview-fullscreen:focus-visible{background:none;color:#d9dbe1}
+
+/* an export that stopped, beside the export button (26 November 2026) */
+.export-failed{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 14px;border-radius:999px;border:1px solid #6b2d2d;background:#2a1414;color:#ffb4a8;font:500 13px Inter,sans-serif;cursor:pointer;margin-right:8px;white-space:nowrap}
+.export-failed:hover{background:#361919;border-color:#8a3a3a}
+.export-failed:disabled{opacity:.6;cursor:default}
