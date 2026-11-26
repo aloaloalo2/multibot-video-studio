@@ -1,10 +1,10 @@
 function channelSoundMarkup(){
   return `<section class="settings-section settings-sound"><h3 hidden>Музика й ефекти</h3>
     <div class="channel-sound-music">
-      <div hidden><label class="check"><input id="sound-music" type="checkbox">Використовувати музику</label>
-      <label class="check channel-sound-generate"><input id="sound-generate" type="checkbox">Створювати фонову музику</label>
+      <div><label class="check"><input id="sound-music" type="checkbox">Генерувати фонову музику</label>
+      <label class="check channel-sound-generate" hidden><input id="sound-generate" type="checkbox"></label>
       <small id="sound-music-note"></small></div>
-      <div class="channel-music-styles" id="music-styles" role="radiogroup" aria-label="Фонова музика"><span class="channel-music-styles-title">Фонова музика</span><small class="channel-music-styles-note">Музика змінюється разом із настроєм розповіді; вибір задає, якими інструментами вона звучить. «М’який фон» і «Глибокий фон» без дзвінких нот.</small><div class="channel-sound-categories"></div></div>
+      <div class="channel-music-styles" id="music-styles" hidden><div class="channel-sound-categories"></div></div>
     </div>
     <details class="channel-sound-group channel-sound-sfx"><summary><span>SFX</span><small id="sound-sfx-count"></small></summary>
       <label class="check"><input id="sound-sfx" type="checkbox">Використовувати SFX</label>
@@ -36,6 +36,10 @@ function bindChannelSound(saved){
     {key:'transitions',field:'styles',toggle:root.querySelector('#sound-transitions'),list:root.querySelector('#transition-categories'),count:root.querySelector('#sound-transition-count'),defaultOn:false},
     {key:'library',field:'ids',toggle:root.querySelector('#sound-library'),list:root.querySelector('#animation-sfx-library'),count:root.querySelector('#sound-library-count'),defaultOn:saved?.effects?.enabled??true}
   ];
+  // one switch (user, 26 November 2026: «або ми генеруємо музику, або ні»): on is a score generated for each film, its sound,
+  // mood, key and tempo picked by the studio for that film and never the channel's last ones (soundtrack.music_pick)
+  music.checked=(saved?.music?.enabled??true)&&(saved?.music?.generate??true);generate.checked=music.checked;
+  music.addEventListener('change',()=>{generate.checked=music.checked;});
   let musicStyle=saved?.music?.style||'whatif';
   // one choice instead of two checkboxes (user, 17 November 2026): «Без музики», a synthesizer, or the channel's own track
   let musicChoice=!music.checked?'none':!generate.checked?'own':musicStyle;
@@ -49,11 +53,11 @@ function bindChannelSound(saved){
   let sample=null;
   const stop=()=>{if(sample){sample.pause();sample.remove();sample=null;}root.querySelectorAll('.sound-preview').forEach(b=>{b.classList.remove('playing');b.setAttribute('aria-pressed','false');});};
   function update(){
-    generate.disabled=!music.checked;root.querySelector('.channel-sound-generate').hidden=!music.checked;
+    generate.checked=music.checked;root.querySelector('.channel-sound-generate').hidden=true;
     root.querySelector('.channel-sound-generate').classList.toggle('muted',!music.checked);
-    root.querySelector('#sound-music-note').textContent=!music.checked?'Ролик без фонової музики.':generate.checked?'Студія може створити музичний супровід.':'Використовуватиметься лише вже додана музика.';
-    root.soundValue.music={enabled:music.checked,generate:generate.checked,...(root.musicStylesReady?{style:musicStyle}:{})};
-    styles.hidden=!root.musicStylesReady;
+    root.querySelector('#sound-music-note').textContent=music.checked?'Для кожного ролика своя музика: студія сама підбирає звучання, настрій, тональність і темп і не повторює останніх роликів каналу.':'Ролик без фонової музики.';
+    root.soundValue.music={enabled:music.checked,generate:music.checked};
+    styles.hidden=true;
     for(const group of groups){
       const inputs=[...group.list.querySelectorAll('input')],selected=inputs.filter(i=>i.checked);
       inputs.forEach(input=>input.disabled=!group.toggle.checked||(group.key==='library'&&!root.librarySoundsReady));
@@ -76,10 +80,10 @@ function bindChannelSound(saved){
   channelSoundCatalog().then(data=>{
     if(!root.isConnected)return;
     root.transitionSoundsReady=Array.isArray(data.transitions);
-    root.musicStylesReady=Array.isArray(data.music_styles);
+    root.musicStylesReady=false;   // no list of sounds to choose from: the studio picks one for each film
     // «Стиль музики»: the channel's generated score, heard before choosing (user, 17 November 2026)
     const choose=value=>{musicChoice=value;music.checked=value!=='none';generate.checked=value!=='none'&&value!=='own';if(value!=='none'&&value!=='own')musicStyle=value;update();};
-    const rows=[{id:'none',label:'Без музики'},...(data.music_styles||[]),...(musicChoice==='own'?[{id:'own',label:'Лише своя музика'}]:[])];
+    const rows=[];   // the list of sounds is gone (26 November 2026): one switch, the studio picks the sound per film
     for(const row of rows){
       const item=document.createElement('div');item.className='channel-sound-category';
       const label=document.createElement('label');label.className='check';
@@ -97,7 +101,7 @@ function bindChannelSound(saved){
       });
       item.append(label,play);styles.lastElementChild.append(item);
     }
-    if(!root.musicStylesReady){styles.hidden=true;root.querySelector('.channel-sound-music>div').hidden=false;}   // an older studio: the two checkboxes
+    styles.hidden=true;
     root.librarySoundsReady=data.library_selection===true&&Array.isArray(data.library);
     for(const group of groups){
       const rows=data[group.key==='effects'?'categories':group.key];

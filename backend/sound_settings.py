@@ -298,13 +298,15 @@ def instructions(project, *, scoped=False, include_workflow=True):
     cues = names + (sfx_library.allowed(sound) if downloaded else [])
     if not create_music and not cues:
         return text + 'Нову музику й акценти всередині кадру створювати не потрібно. Окрему доріжку для них не генеруй.\n'
-    example = json.dumps({'op': 'soundtrack', 'music': create_music, 'mood': 'calm',
+    example = json.dumps({'op': 'soundtrack', 'music': create_music,
                           'cues': [{'name': cues[0], 't': 12.5}] if cues else []}, ensure_ascii=False)
     text += ('Для Razgon запиши ці обмеження в config.json: music.enabled, music.generate, sfx.enabled і sfx.allowed_names; '
              'cue та amb мають використовувати тільки дозволені імена. Вимкнений пункт не потребує генерування.\n'
              'Для звичайного монтажу після створення кадрів один раз використай /ops операцію soundtrack: '
              + example + '. Постав події за реальними таймінгами свого пакета кадрів. '
-             'Передай music:true лише коли музика дозволена до генерації та її ще немає; cues містять лише потрібні події. '
+             'Передай music:true лише коли музика дозволена до генерації та її ще немає; mood не передавай: звучання, настрій, '
+             'тональність і темп студія підбирає сама з музичного набору каналу, щоб кожен ролик звучав по-своєму. '
+             'cues містять лише потрібні події. '
              'Це локальний синтез звуку, без платного API й без рендеру відео. Наявний звук не дублюй.\n')
     return text
 

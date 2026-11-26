@@ -120,6 +120,94 @@ def full_take(module, name: str, seed: int = 7):
     return samples, len(samples) / module.SR
 
 
+# Every film its own score (user, 26 November 2026: «музика та сама… в кожному ролику… щоб YouTube не блокував мої ролики,
+# щоб він давав монетизацію»): the sound (the kit's style), the mood, the key, the tempo and the seed are picked for the
+# film, never a combination the channel's last films had; one seed and one mood made every film of a channel the same.
+MUSIC_MOODS = ('calm', 'wonder', 'mystery', 'hopeful', 'playful', 'sad')   # moods that sit under a voice
+MUSIC_KEYS = ('C', 'D', 'Eb', 'E', 'F', 'G', 'Ab', 'A', 'Bb', 'B')
+MUSIC_RECENT = 4   # the channel's last films whose sound and mood a new film does not repeat
+
+
+def music_kit(channel: str, module) -> dict:
+    """The channel's own music, made for it once on this computer from a random seed: two sounds (the kit's styles),
+    three moods, four keys and a tempo of its own, unlike the other channels' kits as far as the sounds allow (user, 26
+    November 2026: «для нового каналу… по-іншому вже музика генерується… щоб вона кардинально відрізнялася… в каналі
+    самому вже відрізнятися воно може не так сильно»). Its films vary inside it (music_pick)."""
+    import random
+    import secrets
+    path = store.DATA_ROOT / 'channels' / channel / 'music-kit.json'
+    saved = store.read_json(path, None)
+    styles = [x for x in getattr(module, 'STYLES', {}) or ['whatif']]
+    if isinstance(saved, dict) and set(saved.get('styles') or []) <= set(styles) and saved.get('styles'):
+        return saved
+    rng = random.Random(f"{channel}:{secrets.token_hex(16)}")
+    # the sounds the other channels lead with are taken last, so two channels rarely share their sound
+    taken = {}
+    for other in (store.DATA_ROOT / 'channels').glob('*/music-kit.json'):
+        kit = store.read_json(other, None)
+        if isinstance(kit, dict) and other.parent.name != channel:
+            for rank, sid in enumerate(kit.get('styles') or []):
+                taken[sid] = taken.get(sid, 0) + (2 if rank == 0 else 1)
+    order = sorted(styles, key=lambda sid: (taken.get(sid, 0), rng.random()))
+    kit = {'styles': order[:2], 'moods': rng.sample([m for m in MUSIC_MOODS if m in module.MOODS], 3),
+           'keys': rng.sample(MUSIC_KEYS, 4), 'tempo': round(rng.uniform(.9, 1.1), 2)}
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        store.atomic_json(path, kit)
+    except OSError:
+        pass
+    return kit
+
+
+def music_pick(project: dict, module, mood: str | None = None) -> dict:
+    """The film's music inside its channel's kit, picked once and kept with the project (the soundtrack laid again sounds
+    the same), never the sound and mood of the channel's last films."""
+    import random
+    mine = store.project_dir(project['id']) / 'music-pick.json'
+    saved = store.read_json(mine, None)
+    if isinstance(saved, dict) and saved.get('seed') and (mood is None or saved.get('mood') == mood):
+        return saved
+    channel = project.get('channel_id') or 'none'
+    kit = music_kit(channel, module) if project.get('channel_id') else {
+        'styles': ['whatif'], 'moods': ['calm'], 'keys': ['Eb'], 'tempo': 1.0}
+    history_path = store.DATA_ROOT / 'channels' / channel / 'music-history.json'
+    history = [row for row in (store.read_json(history_path, []) or []) if isinstance(row, dict) and row.get('project') != project['id']]
+    recent = history[-MUSIC_RECENT:]
+    rng = random.Random(int(hashlib.sha256(project['id'].encode()).hexdigest()[:16], 16))
+    moods = [mood] if mood else list(kit['moods'])
+    combos = [(st, md) for st in kit['styles'] for md in moods]
+    rng.shuffle(combos)
+    used = {(row.get('style'), row.get('mood')) for row in recent}
+    style, chosen = ([c for c in combos if c not in used] or combos)[0]
+    keys = [k for k in kit['keys'] if k != (recent[-1].get('key') if recent else None)] or list(kit['keys'])
+    pick = {'style': style, 'mood': chosen, 'key': rng.choice(keys),
+            'tempo': round(min(1.15, max(.85, float(kit['tempo']) + rng.uniform(-.04, .04))), 2),
+            'seed': rng.randrange(1, 1_000_000)}
+    if project.get('channel_id'):
+        try:
+            store.atomic_json(mine, pick)
+            history_path.parent.mkdir(parents=True, exist_ok=True)
+            store.atomic_json(history_path, (history + [{**pick, 'project': project['id']}])[-40:])
+        except OSError:
+            pass
+    return pick
+
+
+def music_arc(count: int, seed: int) -> list:
+    """The intensity of each minute of the score: quiet under the start, rising to the film's own peak (somewhere past
+    the middle) and settling before the end, with a little life of its own; always low enough to sit under the voice."""
+    import random
+    rng = random.Random(seed)
+    peak = rng.uniform(.55, .8)
+    low, high = rng.uniform(.24, .28), rng.uniform(.34, .40)
+    out = []
+    for i in range(count):
+        x = (i + .5) / count
+        rise = 1 - abs(x - peak) / max(peak, 1 - peak)
+        out.append(round(min(.42, max(.22, low + (high - low) * rise + rng.uniform(-.02, .02))), 3))
+    return out
+
+
 def place(ctx, spec, *, transition=False, typing=False, drawing=False, appear=False):
     sound = sound_settings.for_project(ctx.project)
     music = spec.get('music', False)
@@ -194,21 +282,21 @@ def place(ctx, spec, *, transition=False, typing=False, drawing=False, appear=Fa
 
     if use_music:
         module = sound_settings.audio_module('music')
-        mood = spec.get('mood', 'calm')
-        if mood not in module.MOODS:
+        if spec.get('mood') is not None and spec['mood'] not in module.MOODS:
             raise ValueError('Невідомий настрій музики')
+        pick = music_pick(ctx.project, module, spec.get('mood'))
         # One piece over the whole film (user, 21 November 2026: «чому музика порізана… це ж має бути одна»): a new
-        # section about every minute, crossfaded inside the score with its own seed and a gently moving intensity, so it
-        # evolves instead of repeating one minute as 16 clips.
+        # section about every minute, crossfaded inside the score with its own seed; its intensity rises and falls like a
+        # story with its own peak (music_arc), so no two films share one curve
         count = max(1, math.ceil(total / 60.0))
         step = total / count
-        plan = [{'start': i * step, 'end': (i + 1) * step, 'mood': mood, 'intensity': (.28, .33, .30, .36)[i % 4]} for i in range(count)]
-        style = sound['music'].get('style', 'whatif')
+        arc = music_arc(count, pick['seed'])
+        plan = [{'start': i * step, 'end': (i + 1) * step, 'mood': pick['mood'], 'intensity': arc[i]} for i in range(count)]
         # FLAC: the same samples in about half the space of the WAV (262 MB for a 24-minute film before)
-        path = folder / f'music-v3-{style}-{mood}-{total:.3f}.flac'
+        path = folder / f"music-v4-{pick['style']}-{pick['mood']}-{pick['key']}-{pick['tempo']}-{pick['seed']}-{total:.3f}.flac"
         with sound_settings.LOCK:
             if not path.exists():
-                samples = module.render_score(plan, total, seed=7, style=style)
+                samples = module.render_score(plan, total, seed=pick['seed'], key=pick['key'], tempo=pick['tempo'], style=pick['style'])
                 wav = path.with_suffix('.pending.wav')
                 module.write_wav(str(wav), samples[:module.secs(total)])
                 del samples
@@ -219,6 +307,7 @@ def place(ctx, spec, *, transition=False, typing=False, drawing=False, appear=Fa
                 finally:
                     wav.unlink(missing_ok=True)
                     path.with_suffix('.pending.flac').unlink(missing_ok=True)
+        ctx.report.append(f"музика: {pick['style']}, {pick['mood']}, тональність {pick['key']}, темп ×{pick['tempo']}")
         add(path, PREFIX + 'музика', 0.0, total, music_volume(path))
     for cue in events:
         key = hashlib.sha256(json.dumps(cue, sort_keys=True).encode()).hexdigest()[:16]
