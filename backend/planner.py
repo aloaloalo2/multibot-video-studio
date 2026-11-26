@@ -285,12 +285,12 @@ def validate_synced_plan(plan, duration):
         if crossing and (len(plan["frames"]) < 2 or plan["frames"][1].get("continuation") != crossing):
             raise ValueError("Продовження фрази після вступу не відповідає озвучці")
     expected = aligned_times(groups, timings, duration, opening_seconds)
-    if plan.get("frame_grid"):
-        grid = float(plan["frame_grid"])
-        expected = [(frame_edge(a, grid), max(frame_edge(b, grid), round(frame_edge(a, grid) + 1 / grid, 6))) for a, b in expected]
+    # a plan on the grid of video frames (snap_frames) has each edge within half a video frame of the spoken one: an edge
+    # that falls just on the middle between two frames rounds either way (360.86 s at 25 fps, 26 November 2026)
+    slack = .0011 + (.5 / float(plan["frame_grid"]) + 1e-6 if plan.get("frame_grid") else 0)
     offset = 0
     for frame, group, (start, end) in zip(plan["frames"], groups, expected):
-        if abs(float(frame["start"]) - start) > .0011 or abs(float(frame["end"]) - end) > .0011 or frame.get("sentence_timings") != timings[offset:offset + len(group)]:
+        if abs(float(frame["start"]) - start) > slack or abs(float(frame["end"]) - end) > slack or frame.get("sentence_timings") != timings[offset:offset + len(group)]:
             raise ValueError("Таймінги кадрів змінилися. Оновіть план за озвучкою")
         offset += len(group)
 

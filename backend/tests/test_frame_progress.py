@@ -66,6 +66,11 @@ class FrameProgressTest(unittest.TestCase):
         self.assertEqual([(f['start'], f['end']) for f in plan['frames']], [(0.0, 12.92), (12.92, 32.36)])
         self.assertEqual(plan['frame_grid'], 25.0)
 
+    def test_a_snapped_edge_on_the_middle_between_two_frames_still_matches_its_sentences(self):
+        import planner
+        self.assertEqual(planner.frame_edge(360.86, 25), 360.88)       # exactly half way rounds up
+        self.assertEqual(planner.frame_edge(360.859943, 25), 360.84)   # a hair below rounds down
+
     def test_an_episode_without_razgon_has_no_drawn_frames(self):
         with patch.object(store, "load_project", return_value={"id": "p" * 24, "episode_path": self.tmp.name}):
             self.assertEqual(frame_progress.drawn("p" * 24), [])
