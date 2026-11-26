@@ -353,7 +353,8 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
    під ним): інше відео чи картинка, колір, градієнт, візерунок, прозорість, розмір і місце тексту, word_entrance; слова лишаються
    в такт голосу. Перевір стоп-кадром, що текст читається. Працюй лише з номерами поточного завдання.
    Кадри 2D-анімації Razgon (razgon_2d) пишеш кодом, як у правилах каналу, без рендеру відео: якщо проєкту Razgon ще немає,
-   python3 "{tools}/razgon_bridge.py" prepare --project-id {project['id']}; далі сцени шотів цих кадрів і
+   python3 "{tools}/razgon_bridge.py" prepare --project-id {project['id']}; далі сцени шотів цих кадрів (кадр razgon_2d це одна
+   сцена: одне місце й одна дія, камера в ній може рухатися; не зшивай у кадр частини з різними місцями чи масштабами) і
    python3 "{tools}/razgon_bridge.py" slots --razgon <проєкт Razgon>{razgon_scope}: блоки-код стануть лише на кадри формату razgon_2d.
 6. Постановка: кожну картинку чи відео ставиш на таймлайн у час кадру: python3 "{tools}/studio.py" place {project['id']} N <файл> --motion zoom_in|zoom_out|pan_left|pan_right|none.
    Без --motion картинка лишається нерухомою. Пресет застосовуй лише коли він відповідає постановці цього кадру;
