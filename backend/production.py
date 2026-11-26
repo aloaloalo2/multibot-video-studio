@@ -27,6 +27,7 @@ import logo_layer
 import production_context
 import production_sessions
 import razgon_sound
+import os
 import store
 import job_timing
 import production_quality
@@ -381,6 +382,7 @@ def session_brief(current: dict, scoped: dict, notes: str, numbers, index: int, 
     text = (film_repair_brief(current,scoped,notes) if film else repair_brief(current,scoped,notes) if scoped.get('repair_frames')
             else brief(current, scoped, notes) if store.project_animated(current) else photo_brief(current, scoped, notes))
     text += montage_context.rules(current, production=True) + montage_context.commands(current, numbers, repair=bool(scoped.get('repair_frames')) or film)
+    text += motion_direction.NO_QUESTIONS
     if any(f.get('format') == 'razgon_2d' and (not numbers or f['number'] in numbers)
            for f in (store.load_project_plan(current['id']) or {}).get('frames', [])):
         import engine_index
@@ -419,6 +421,40 @@ def run(pid: str, cli: Path, notes: str = "") -> None:
     finally:
         with LOCK:
             ACTIVE.discard(pid)
+    auto_continue(pid)
+
+
+# A run that stopped part way goes on by itself (user, 26 November 2026: «ніяких стопорних моментів… то він не доробив те,
+# що мав доробити»): up to two continuations in a row from the saved files, through resume (which closes a run whose
+# frames are all made and pass, or goes on with the frames left). A pause, a limit, a full disk or a stop the author
+# asked for waits for the author, as before; the count starts again once a run ends done.
+AUTO_CONTINUES = 2
+AUTO_WINDOW = 6 * 3600
+
+
+def auto_continue(pid: str) -> None:
+    if os.environ.get('VIDEOKEY_NO_AUTO_RETRY'):
+        return
+    try:
+        request = store.load_project(pid).get('production_request') or {}
+    except (OSError, store.StudioError):
+        return
+    mark = store.project_dir(pid) / 'production-auto.json'
+    if request.get('status') == 'done':
+        mark.unlink(missing_ok=True)
+        return
+    if (request.get('status') != 'failed' or request.get('paused') or request.get('limit')
+            or director.limit_stop({'result': request.get('error')}) or director.stop_asked(pid, 'production')):
+        return
+    saved = store.read_json(mark, {}) or {}
+    count = int(saved.get('count') or 0) if time.time() - float(saved.get('at') or 0) < AUTO_WINDOW else 0
+    if count >= AUTO_CONTINUES:
+        return
+    store.atomic_json(mark, {'count': count + 1, 'at': time.time()})
+    try:
+        resume(pid)
+    except store.StudioError as error:   # nothing to go on with (nothing made, a real defect): the author decides
+        print(f"[production] auto continue of {pid}: {error}", flush=True)
 
 
 REVIEW_EFFORT = 'low'

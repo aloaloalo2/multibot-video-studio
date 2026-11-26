@@ -19,6 +19,7 @@ from pathlib import Path
 
 import razgon_sound
 import agent_storage
+import os
 import store
 import job_timing
 import motion_direction
@@ -97,6 +98,7 @@ def animated(project: dict) -> bool:
 def brief(project: dict) -> str:
     is_animated = animated(project)
     text = razgon_brief(project) if is_animated else frames_brief(project)
+    text += motion_direction.NO_QUESTIONS
     import script_timing
     if script_timing.estimated(store.load_project_plan(project["id"])):
         # the director works while the voice is made (user, 16 November 2026: «якщо є сценарій, то… вже можемо починати»)
@@ -699,6 +701,39 @@ def run(pid: str, cli: Path) -> None:
                 except (OSError, RuntimeError, store.StudioError) as error:
                     data['creation_error'] = str(error)
                     save(pid, data)
+        retry_once(pid)
+
+
+# A direction that failed is run again once by itself (user, 26 November 2026: «ніяких стопорних моментів»): a limit, a
+# stop the author asked for or a channel set to «Без плану» still waits for the author; the second failure too.
+RETRY_WINDOW = 6 * 3600
+
+
+def retry_once(pid: str) -> None:
+    if os.environ.get('VIDEOKEY_NO_AUTO_RETRY'):
+        return
+    try:
+        _retry_once(pid)
+    except (OSError, store.StudioError) as error:   # a project gone, a busy studio: no retry, nothing breaks
+        print(f"[director] retry of {pid}: {error}", flush=True)
+
+
+def _retry_once(pid: str) -> None:
+    data = state(pid) or {}
+    mark = store.project_dir(pid) / 'director-auto.json'
+    if data.get('status') == 'done':
+        mark.unlink(missing_ok=True)
+        return
+    if data.get('status') != 'failed' or data.get('limit') or limit_stop({'result': data.get('error')}) or stop_asked(pid, 'director'):
+        return
+    saved = store.read_json(mark, {}) or {}
+    if time.time() - float(saved.get('at') or 0) < RETRY_WINDOW:
+        return
+    store.atomic_json(mark, {'at': time.time()})
+    try:
+        start(pid, 'create_video' if data.get('create_video') else data.get('reason') or 'voice')
+    except store.StudioError as error:
+        print(f"[director] retry of {pid}: {error}", flush=True)
 
 
 def _run(pid: str, cli: Path) -> None:
