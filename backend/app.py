@@ -1781,7 +1781,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response(draft)
         if path == "/api/sound-effects":
             import sound_settings
-            return self.json_response({"categories": sound_settings.catalog(), "transitions": sound_settings.transition_catalog(), "music_styles": sound_settings.music_catalog(), "library": __import__("sfx_library").catalog(), "library_selection": True})
+            return self.json_response({"categories": sound_settings.catalog(), "transitions": sound_settings.transition_catalog(), "music_styles": sound_settings.music_catalog(), "library": __import__("sfx_library").catalog(), "library_selection": True, "music_library": __import__("music_library").public()})
         library_match = re.fullmatch(r"/api/sfx-library/([0-9]+)\.wav", path)
         if library_match:
             import sfx_library
@@ -1793,6 +1793,10 @@ class Handler(BaseHTTPRequestHandler):
         if sound_match:
             import sound_settings
             return self.serve_media(sound_settings.preview(sound_match.group(1)), cache=True)
+        music_track = re.fullmatch(r"/api/music-library/([A-Za-z0-9_-]{6,40})\.mp3", path)
+        if music_track:
+            import music_library
+            return self.serve_media(music_library.track_path(music_track.group(1)), cache=True)
         music_style = re.fullmatch(r"/api/music-styles/([a-z]+)\.mp3", path)
         if music_style:
             import sound_settings

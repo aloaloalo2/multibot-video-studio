@@ -6,10 +6,14 @@ function channelSoundMarkup(){
       <small id="sound-music-note"></small></div>
       <div class="channel-music-styles" id="music-styles" hidden><div class="channel-sound-categories"></div></div>
     </div>
+    <details class="channel-sound-group channel-sound-music-library"><summary><span>Музична бібліотека</span><small id="music-library-count"></small></summary>
+      <p class="channel-sound-note">Позначені треки чергуються між роликами й потрапляють в опис.</p>
+      <div id="music-library" class="channel-music-library"></div>
+    </details>
     <details class="channel-sound-group channel-sound-sfx"><summary><span>SFX</span><small id="sound-sfx-count"></small></summary>
       <label class="check"><input id="sound-sfx" type="checkbox">Використовувати SFX</label>
       <input id="sound-effects" type="checkbox" hidden><input id="sound-library" type="checkbox" hidden><small id="sound-effect-count" hidden></small><small id="sound-library-count" hidden></small>
-      <p class="channel-sound-note">Одна добірка для акцентів і анімацій: звуки моушн-дизайну на появу, обертання, кліки, накручування тексту. Кожен звук звучить цілим, до 4 с, гучність вирівняна.</p>
+      <p class="channel-sound-note">Звуки на появу, кліки й текст, до 4 с.</p>
       <div id="sound-categories" class="channel-sound-categories"></div>
       <div id="animation-sfx-library" class="channel-sound-categories"></div>
     </details>
@@ -51,12 +55,15 @@ function bindChannelSound(saved){
     root.soundValue[group.key]={enabled:group.toggle.checked,...(choices?{[group.field]:[...choices]}:{})};
   }
   let sample=null;
-  const stop=()=>{if(sample){sample.pause();sample.remove();sample=null;}root.querySelectorAll('.sound-preview').forEach(b=>{b.classList.remove('playing');b.setAttribute('aria-pressed','false');});};
+  const stop=()=>{root.pauseMusicTrack?.();if(sample){sample.pause();sample.remove();sample=null;}root.querySelectorAll('.sound-preview').forEach(b=>{b.classList.remove('playing');b.setAttribute('aria-pressed','false');});};
   function update(){
     generate.checked=music.checked;root.querySelector('.channel-sound-generate').hidden=true;
     root.querySelector('.channel-sound-generate').classList.toggle('muted',!music.checked);
-    root.querySelector('#sound-music-note').textContent=music.checked?'Для кожного ролика своя музика: студія сама підбирає звучання, настрій, тональність і темп і не повторює останніх роликів каналу.':'Ролик без фонової музики.';
-    root.soundValue.music={enabled:music.checked,generate:music.checked};
+    root.querySelector('#sound-music-note').textContent=music.checked?'Своя музика для кожного ролика.':'Без фонової музики.';
+    const ticked=[...root.querySelectorAll('#music-library input:checked')].map(input=>input.value);
+    root.soundValue.music={enabled:music.checked,generate:music.checked,...(root.musicLibraryReady?{tracks:ticked}:saved?.music?.tracks?{tracks:[...saved.music.tracks]}:{})};
+    const libraryGroup=root.querySelector('.channel-sound-music-library');libraryGroup.hidden=!music.checked;
+    if(root.musicLibraryReady)root.querySelector('#music-library-count').textContent=`${ticked.length} з ${root.querySelectorAll('#music-library input').length}`;
     styles.hidden=true;
     for(const group of groups){
       const inputs=[...group.list.querySelectorAll('input')],selected=inputs.filter(i=>i.checked);
@@ -102,6 +109,46 @@ function bindChannelSound(saved){
       item.append(label,play);styles.lastElementChild.append(item);
     }
     styles.hidden=true;
+    // «Музична бібліотека»: the studio's tracks from the YouTube Audio Library, ticked for the channel (26 November 2026)
+    const PLAY='<svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="m7 4 9 6-9 6Z"/></svg>',PAUSE='<svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M6 4h3v12H6zM11 4h3v12h-3z"/></svg>';
+    const clock=seconds=>{const s=Math.max(0,Math.round(Number(seconds)||0));return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;};
+    let track=null;   // {id, audio, play, time, seconds}
+    const paint=(item,playing)=>{item.play.innerHTML=playing?PAUSE:PLAY;item.play.classList.toggle('playing',playing);item.play.setAttribute('aria-pressed',String(playing));
+      item.time.textContent=playing||item.audio.currentTime>0?`${clock(item.audio.currentTime)} / ${clock(item.seconds)}`:clock(item.seconds);};
+    const dropTrack=()=>{if(!track)return;track.audio.pause();track.audio.removeAttribute('src');track.audio.load();track.play.innerHTML=PLAY;track.play.classList.remove('playing');track.play.setAttribute('aria-pressed','false');track.time.textContent=clock(track.seconds);track.audio.remove();track=null;};
+    async function toggleTrack(row,play,time){
+      if(track?.id===row.id){if(track.audio.paused){stop();try{await track.audio.play();}catch{status('Не вдалося прослухати трек.',true);}}else track.audio.pause();return;}
+      dropTrack();stop();
+      const audio=new Audio(row.preview_url);audio.volume=.5;audio.preload='auto';audio.hidden=true;play.parentElement.append(audio);   // in the dialog, so closing it pauses the track
+      const item={id:row.id,audio,play,time,seconds:row.seconds};track=item;
+      audio.addEventListener('play',()=>paint(item,true));audio.addEventListener('pause',()=>paint(item,false));
+      audio.addEventListener('timeupdate',()=>{if(!audio.paused)paint(item,true);});
+      audio.addEventListener('ended',()=>{audio.currentTime=0;paint(item,false);});
+      try{await audio.play();}catch{if(track===item){dropTrack();status('Не вдалося прослухати трек.',true);}}
+    }
+    root.stopMusicTrack=dropTrack;
+    root.pauseMusicTrack=()=>{if(track&&!track.audio.paused)track.audio.pause();};
+    const musicList=root.querySelector('#music-library');
+    if(Array.isArray(data.music_library)){
+      root.musicLibraryReady=true;
+      const chosen=new Set(saved?.music?.tracks||[]);let heading=null;
+      for(const row of data.music_library){
+        if(row.category!==heading){heading=row.category;const head=document.createElement('div');head.className='channel-sound-source';head.textContent=heading[0].toUpperCase()+heading.slice(1);musicList.append(head);}
+        // one list, a track a row; the button plays and pauses and keeps the place (user, 26 November 2026: «як один
+        // блок, і щоб плей-пауза… працювали»)
+        const item=document.createElement('div');item.className='music-track';
+        const label=document.createElement('label');label.className='check';
+        const input=document.createElement('input');input.type='checkbox';input.value=row.id;input.checked=chosen.has(row.id);
+        const name=document.createElement('span');name.className='music-track-name';name.textContent=row.title;
+        const artist=document.createElement('small');artist.textContent=row.artist;
+        const time=document.createElement('small');time.className='music-track-time';time.textContent=clock(row.seconds);
+        label.append(input,name,artist);input.addEventListener('change',update);
+        const play=document.createElement('button');play.type='button';play.className='sound-preview';play.setAttribute('aria-label',`Прослухати: ${row.title}`);play.setAttribute('aria-pressed','false');play.innerHTML=PLAY;
+        play.addEventListener('click',()=>toggleTrack(row,play,time));
+        item.append(label,time,play);musicList.append(item);
+      }
+      if(!data.music_library.length)musicList.textContent='Бібліотека музики ще порожня.';
+    }
     root.librarySoundsReady=data.library_selection===true&&Array.isArray(data.library);
     for(const group of groups){
       const rows=data[group.key==='effects'?'categories':group.key];

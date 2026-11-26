@@ -280,7 +280,23 @@ def place(ctx, spec, *, transition=False, typing=False, drawing=False, appear=Fa
                             'asset_id': assets[path], 'start': start, 'duration': duration, 'volume': volume}})
         existing.add(title)
 
+    library_tracks = []
     if use_music:
+        import music_library
+        library_tracks = music_library.selected(sound)
+    if use_music and library_tracks:
+        # the channel's ticked tracks from the YouTube Audio Library, laid by the film's moments (26 November 2026)
+        segments = music_library.lay_out(ctx.project, ctx.plan, total, library_tracks)
+        path = folder / f"music-lib-{music_library.plan_key(segments, total)}.flac"
+        with sound_settings.LOCK:
+            if not path.exists():
+                music_library.render(segments, total, path)
+        music_library.remember(ctx.project, segments)
+        tracks_used = len({s['track'] for s in segments if s['track']})
+        quiet = sum(s['end'] - s['start'] for s in segments if not s['track'] or s['level'] == 0)
+        ctx.report.append(f"музика з бібліотеки: треків {tracks_used}, без музики {quiet:.0f} с")
+        add(path, PREFIX + 'музика', 0.0, total, music_volume(path))
+    elif use_music:
         module = sound_settings.audio_module('music')
         if spec.get('mood') is not None and spec['mood'] not in module.MOODS:
             raise ValueError('Невідомий настрій музики')

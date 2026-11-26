@@ -146,7 +146,7 @@ def apply(pid: str, frames, dry_run: bool = False) -> dict:
     labels = {key: planner.LABELS.get(key, key) for key in targets}
     if not isinstance(frames, list) or not frames:
         raise store.StudioError("Передайте кадри: список frames")
-    problems, groups, kinds, ideas, expected = [], [], [], [], 1
+    problems, groups, kinds, ideas, musics, expected = [], [], [], [], [], 1
     for index, frame in enumerate(frames, 1):
         numbers = frame.get("sentences") if isinstance(frame, dict) else None
         if not isinstance(numbers, list) or not numbers or not all(isinstance(n, int) and not isinstance(n, bool) for n in numbers):
@@ -161,6 +161,7 @@ def apply(pid: str, frames, dry_run: bool = False) -> dict:
         groups.append(numbers)
         kinds.append(kind)
         ideas.append(str(frame.get("idea") or frame.get("visual") or "").strip())
+        musics.append(str(frame.get("music") or "").strip().lower()[:30])
     if not problems and expected - 1 != len(texts):
         problems.append(f"Кадри покривають речення 1–{expected - 1}, а в озвучці їх {len(texts)}")
     if problems:
@@ -215,11 +216,13 @@ def apply(pid: str, frames, dry_run: bool = False) -> dict:
     if problems or dry_run:
         return result
     made = []
-    for number, (group, kind, idea, (start, end)) in enumerate(zip(groups, kinds, ideas, times), 1):
+    for number, (group, kind, idea, music, (start, end)) in enumerate(zip(groups, kinds, ideas, musics, times), 1):
         frame = {"number": number, "start": round(start, 3), "end": round(end, 3), "sentences": [texts[n - 1] for n in group],
                  "sentence_timings": [dict(timings[n - 1]) for n in group], "format": kind}
         if idea:
             frame["visual"] = idea
+        if music:
+            frame["music"] = music   # the director's music mark (music_library.frame_marks)
         made.append(frame)
     new_plan = dict(plan, frames=made, frame_source=planner.DIRECTOR_FRAME_SOURCE, opening_clip_split=False,
                     settings_snapshot=settings, settings_signature=planner.settings_signature(settings),

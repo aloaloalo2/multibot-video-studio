@@ -59,3 +59,15 @@ class ClaimTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MusicCreditsTest(unittest.TestCase):
+    def test_the_music_goes_above_the_hashtags_in_the_description_language(self):
+        text = "Я порахував, скільки світла летить від Андромеди.\n\n#космос #андромеда #галактика"
+        out = y.with_credits(text, ["Pulsar, The Grey Room / Density & Time"])
+        lines = out.splitlines()
+        self.assertEqual(lines[-1], "#космос #андромеда #галактика")
+        self.assertIn("Музика: Pulsar, The Grey Room / Density & Time (YouTube Audio Library)", out)
+        self.assertEqual(y.with_credits(out, ["Pulsar, The Grey Room / Density & Time"]), out)   # once
+        self.assertTrue(y.with_credits("Мы посчитали свет.", ["A, B"]).endswith("Музыка: A, B (YouTube Audio Library)"))
+        self.assertEqual(y.with_credits("Text", []), "Text")

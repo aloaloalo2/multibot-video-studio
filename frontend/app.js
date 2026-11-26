@@ -1502,7 +1502,7 @@ async function action(type,payload,message,options={}) {
 }
 
 function openChannelSettings(channel) {
-  const original=channel.settings || {};const weights=original.weights || {};
+  let original=channel.settings || {};const weights=original.weights || {};
   const allKeys=['generated_video','generated_photo','animation','razgon_2d','host','text'];
   const names={'stock_video':'Стокове відео','generated_video':'Створене відео','stock_photo':'Стокове фото','generated_photo':'Створені зображення','animation':'Кодова анімація','razgon_2d':'2D-анімація Razgon','host':'HeyGen відео','text':'Текстові тези'};
   const allColors=['#00c8f8','#ff77b7','#9bdf24','#ff4fd8','#ff8845','#56e3c2'];
@@ -1526,26 +1526,35 @@ function openChannelSettings(channel) {
     <section class="settings-section settings-agent-memory"><h3>Побажання до плану кадрів і монтажу</h3><p>Спільна пам’ять каналу. Її отримують режисер, коли складає план кадрів, агент, який створює кадри, і правки через кнопку Claude. Тому побажання до плану теж пишіть сюди: як ділити ролик на кадри, які формати де ставити, якої довжини кадри. Розділи із заголовком (# …) лише про сценарій, зачини чи тайтли сюди не передаються, їх пишіть у «Сценаристу». Агент кадрів не отримує розділи суто про складання плану, бо план на той час уже готовий.</p><textarea id="channel-agent-memory" aria-label="Побажання до плану кадрів і монтажу" rows="12" maxlength="30000" placeholder="# План кадрів&#10;Перший кадр повторює обкладинку.&#10;Ведучий ніколи не стоїть два кадри підряд.&#10;&#10;# Стиль кадрів&#10;Побутові фото зі звичайним освітленням, схожі на знімки зі смартфона.&#10;&#10;# Люди й персонажі&#10;Люди віком від 60 років, з природними віковими рисами.&#10;&#10;# Рух&#10;Кожне фото плавно рухається, напрямок за композицією.&#10;&#10;# Текст і підписи&#10;Текст на кадрі лише для ключової фрази, разом із голосом." disabled></textarea><p id="channel-agent-memory-feedback" role="status">Завантажуємо...</p></section>`;
   // The agent memory is saved by the main Save button too, only when it was loaded and then changed.
   let brandingValues=()=>({}),savedMemory=null;
-  modal('Налаштування каналу',body,[{label:'Видалити канал зі списку',icon:'trash',danger:true,run:()=>confirmDisableChannel(channel)},{label:'Зберегти',primary:true,run:async()=>{
-    try {if(!validWeights()){settingsLayout.reveal($('settings-weights'));throw new Error('Сума часток має дорівнювати 100%.');}const settings={...original,typography:{...(original.typography||{}),font_family:$('style-title-font').value,accent_font_family:$('style-title-font').value,unified:true},sound:channelSoundValues(),...(typeof channelTransitionValues==='function'&&channelTransitionValues()?{transitions:channelTransitionValues()}:{}),generated_image_style:$('settings-generated-image-style').value.trim(),thumbnail_wishes:$('settings-thumbnail-wishes').value.trim(),script_wishes:$('settings-script-wishes').value.trim(),auto_narration:$('settings-auto-narration').checked,auto_montage:$('settings-auto-montage').checked,auto_opening:$('settings-auto-opening').checked,auto_translation:!!$('settings-auto-translation')?.checked,auto_translation_voice:!!$('settings-auto-translation-voice')?.checked,auto_export:!!$('settings-auto-export')?.checked,auto_publish:!!$('settings-auto-publish')?.checked,publish_interval_days:Math.min(10,Math.max(1,Math.round(Number($('settings-publish-interval')?.value)||1))),director_model:$('settings-director-model').value,claude_effort:$('settings-claude-effort').value,plan_mode:$('settings-plan-mode').value,weights:Object.fromEntries(keys.filter(key=>values[key]>0).map(key=>[key,values[key]])),first_clip_seconds:0,first_clip_format:'auto',opening_sequence:[1,2,3].map(n=>$(`settings-open-${n}`).value),closing_sequence:[1,2,3].map(n=>$(`settings-close-${n}`).value),first_clip_count:1,short_sentence_words:Number($('settings-short').value),accents:$('settings-accents').checked,host_graphics:$('settings-host-graphics').checked,video_size:$('settings-video-size').value,video_fps:Number($('settings-video-fps').value),video_quality:$('settings-video-quality').value,...brandingValues()};
+  // No Save button: every change saves itself a moment after it is made (user, 26 November 2026: «кнопка зберегти…
+  // не потрібно… все і так зберігатися має»). The settings are read at once (a closing dialog still saves its last
+  // change), sent in the background, and a change made meanwhile is saved by the next round.
+  let saving=null;const savedVoices={voice:null,translation:null};
+  const saveChannelSettings=()=>{
+    if(saving||!validWeights())return saving;
+    const mark=settingsLayout.snapshot();
+    const settings={...original,typography:{...(original.typography||{}),font_family:$('style-title-font').value,accent_font_family:$('style-title-font').value,unified:true},sound:channelSoundValues(),...(typeof channelTransitionValues==='function'&&channelTransitionValues()?{transitions:channelTransitionValues()}:{}),generated_image_style:$('settings-generated-image-style').value.trim(),thumbnail_wishes:$('settings-thumbnail-wishes').value.trim(),script_wishes:$('settings-script-wishes').value.trim(),auto_narration:$('settings-auto-narration').checked,auto_montage:$('settings-auto-montage').checked,auto_opening:$('settings-auto-opening').checked,auto_translation:!!$('settings-auto-translation')?.checked,auto_translation_voice:!!$('settings-auto-translation-voice')?.checked,auto_export:!!$('settings-auto-export')?.checked,auto_publish:!!$('settings-auto-publish')?.checked,publish_interval_days:Math.min(10,Math.max(1,Math.round(Number($('settings-publish-interval')?.value)||1))),director_model:$('settings-director-model').value,claude_effort:$('settings-claude-effort').value,plan_mode:$('settings-plan-mode').value,weights:Object.fromEntries(keys.filter(key=>values[key]>0).map(key=>[key,values[key]])),first_clip_seconds:0,first_clip_format:'auto',opening_sequence:[1,2,3].map(n=>$(`settings-open-${n}`).value),closing_sequence:[1,2,3].map(n=>$(`settings-close-${n}`).value),first_clip_count:1,short_sentence_words:Number($('settings-short').value),accents:$('settings-accents').checked,host_graphics:$('settings-host-graphics').checked,video_size:$('settings-video-size').value,video_fps:Number($('settings-video-fps').value),video_quality:$('settings-video-quality').value,...brandingValues()};
       settings.heygen_avatar=settingsLayout.heygenAvatar();
       settings.weights_auto=keys.filter(key=>autoFormats.has(key));
       const form=$('channel-name'),memory=$('channel-agent-memory').value,voiceLab=document.querySelector('.channel-voice-lab'),voiceSettings=voiceLab?.voiceSettingsSnapshot?.();
       const translationVoices=$('channel-voices'),translationSettings=translationVoices?.voiceSettingsSnapshot?.();
+    saving=(async()=>{
       const result=await api(`/api/channels/${encodeURIComponent(channel.id)}`,'PATCH',{settings});
-      if(savedMemory!==null&&memory!==savedMemory)await api(`/api/channels/${encodeURIComponent(channel.id)}/agent-memory`,'POST',{memory});
-      if(voiceLab?.saveVoiceSettings)await voiceLab.saveVoiceSettings(voiceSettings);
-      if(translationVoices?.saveVoiceSettings)await translationVoices.saveVoiceSettings(translationSettings);
-      const next=result.channel || {...channel,settings};state.channels=state.channels.map(item=>item.id===channel.id?next:item);if(state.channel?.id===channel.id)state.channel=next;if($('channel-name')===form)closeModal();renderChannels();
-      if(state.project?.channel_id===channel.id && (original.plan_mode || 'director')!==settings.plan_mode){
-        await selectProject(state.project.id,{view:state.view});
-      }else{
-        renderProject();
-        if(state.view==='langs'&&state.project?.channel_id===channel.id)await loadLangs(state.project.id);
+      if(savedMemory!==null&&memory!==savedMemory){await api(`/api/channels/${encodeURIComponent(channel.id)}/agent-memory`,'POST',{memory});savedMemory=memory;}
+      // the voices are posted only when they changed since the last round
+      const voiceKey=JSON.stringify(voiceSettings??null),translationKey=JSON.stringify(translationSettings??null);
+      if(voiceLab?.saveVoiceSettings&&voiceKey!==savedVoices.voice){await voiceLab.saveVoiceSettings(voiceSettings);savedVoices.voice=voiceKey;}
+      if(translationVoices?.saveVoiceSettings&&translationKey!==savedVoices.translation){await translationVoices.saveVoiceSettings(translationSettings);savedVoices.translation=translationKey;}
+      const before=original.plan_mode || 'director';original=settings;settingsLayout.saved(mark);
+      const next=result.channel || {...channel,settings};state.channels=state.channels.map(item=>item.id===channel.id?next:item);if(state.channel?.id===channel.id)state.channel=next;renderChannels();
+      if(state.project?.channel_id===channel.id){
+        if(before!==settings.plan_mode)await selectProject(state.project.id,{view:state.view});
+        else{renderProject();if(state.view==='langs')await loadLangs(state.project.id);}
       }
-      status(`Налаштування каналу «${channel.name}» збережено.`);
-    }catch(error){status(error.message,true);}
-  }}]);
+    })().finally(()=>{saving=null;});
+    return saving;
+  };
+  modal('Налаштування каналу',body,[{label:'Видалити канал зі списку',icon:'trash',danger:true,run:()=>confirmDisableChannel(channel)}]);
   $('modal-backdrop').classList.add('settings-modal-open');
   const settingsLayout=organizeChannelSettings(channel);
   bindChannelTransfer(channel);
@@ -1624,7 +1633,7 @@ function openChannelSettings(channel) {
     });
     bar.classList.toggle('invalid',!valid);settingsLayout.setValidity(valid);
   }
-  drawSummary();settingsLayout.ready();
+  drawSummary();settingsLayout.ready(saveChannelSettings);
 }
 function normalizeWeights(values,keys){if(keys.some(key=>!Number.isInteger(values[key])||values[key]<0||values[key]>100))throw new Error('Укажіть цілі числа від 0 до 100.');const total=keys.reduce((sum,key)=>sum+values[key],0);if(total===0)throw new Error('Сума 0%. Спочатку задайте хоча б одну частку.');const exact=keys.map(key=>values[key]/total*100),floors=exact.map(Math.floor),remain=100-floors.reduce((sum,value)=>sum+value,0);exact.map((value,index)=>[value-floors[index],index]).sort((a,b)=>b[0]-a[0]||a[1]-b[1]).slice(0,remain).forEach(([,index])=>floors[index]++);return Object.fromEntries(keys.map((key,index)=>[key,floors[index]]));}
 

@@ -549,7 +549,7 @@ def keep_director_frames(plan, previous):
     times = aligned_times(groups, timings, plan["timing"]["audio"]["duration"], None)
     frames, offset = [], 0
     for number, (old_frame, group, (start, end)) in enumerate(zip(previous["frames"], groups, times), 1):
-        frame = {key: old_frame[key] for key in ("format", "episode", "scene", "visual") if key in old_frame}
+        frame = {key: old_frame[key] for key in ("format", "episode", "scene", "visual", "music") if key in old_frame}
         frame.update(number=number, start=round(start, 3), end=round(end, 3), sentences=group,
                      sentence_timings=copy.deepcopy(timings[offset:offset + len(group)]))
         frames.append(frame)

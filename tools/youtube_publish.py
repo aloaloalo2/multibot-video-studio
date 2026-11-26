@@ -83,6 +83,31 @@ def metadata(folder: Path) -> dict:
     return {"titles": titles, "title": titles[0], "description": parts["Описание"], "tags": tags}
 
 
+def music_credits(pid: str) -> list[str]:
+    """«Title, Artist» of the music-library tracks the film's music used (backend/music_library.remember)."""
+    ids = read_json(DATA / "projects" / pid / "music-tracks.json", []) or []
+    rows = {row.get("id"): row for row in read_json(DATA / "music-library" / "catalog.json", []) or [] if isinstance(row, dict)}
+    return [f"{rows[i]['title']}, {rows[i]['artist']}" for i in ids if i in rows]
+
+
+def with_credits(description: str, credits: list[str]) -> str:
+    """The film's music named in its description, in the description's language, above its hashtags (user, 26 November
+    2026: «обов'язково треба ролики позначати в описанні, яку ми музику використовували»)."""
+    if not credits or any(c in description for c in credits):
+        return description
+    word = ("Музика" if re.search(r"[іїєґІЇЄҐ]", description) else "Музыка" if re.search(r"[а-яА-ЯёЁ]", description)
+            else "Musik" if re.search(r"[äöüßÄÖÜ]", description) else "Music")
+    line = f"{word}: " + "; ".join(credits) + " (YouTube Audio Library)"
+    lines = description.rstrip().splitlines()
+    tail = len(lines)
+    while tail > 0 and lines[tail - 1].strip().startswith("#"):
+        tail -= 1
+    head, tags = lines[:tail], lines[tail:]
+    while head and not head[-1].strip():
+        head.pop()
+    return "\n".join(head + ["", line] + ([""] + tags if tags else []))
+
+
 def video(project: dict) -> Path:
     jobs = studio.call("GET", f"/api/projects/{project['id']}/exports").get("jobs") or []
     for job in jobs:
@@ -268,6 +293,7 @@ def prepare(ref: str) -> dict:
         raise studio.Failure(CANCELLED)
     folder = Path(project["episode_path"])
     data = metadata(folder)
+    data["description"] = with_credits(data["description"], music_credits(project["id"]))
     mp4, png = video(project), cover(project)
     # names unique to the episode and the cover's version: a browser never hands Studio another episode's cached cover
     # (19 November 2026: Titan's upload first got the black-hole film's cover from the cache)

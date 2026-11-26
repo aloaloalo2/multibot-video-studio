@@ -260,6 +260,25 @@ def animation_style(project: dict) -> str:
             "У локальній правці застосовуй це лише до вибраних кадрів, без глобальної зміни прийнятого ролика.\n")
 
 
+def music_marks(project: dict) -> str:
+    """The director's music marks, when the channel ticked tracks of the music library (26 November 2026: «на кожну подію…
+    правильно підібраних звуків і аудіо», «інколи без музики може бути якийсь етап», «тихіше… голосніше… 2%… більше… вниз»)."""
+    try:
+        import music_library
+        import sound_settings
+        tracks = music_library.selected(sound_settings.for_project(project))
+    except Exception:   # noqa: BLE001 — the plan is made without music marks
+        return ''
+    if not tracks:
+        return ''
+    kinds = [c for c in music_library.CATEGORIES if any(t['category'] == c for t in tracks)]
+    return ("   Музика: кадру можна дати поле music. Характер музики з бібліотеки каналу: " + ", ".join(f"«{k}»" for k in kinds) +
+            "; кадри одного характеру звучать одним треком, на зміні характеру трек плавно міняється. Рівень: «тихіше», "
+            "«гучніше» (на кілька відсотків), «ледь чутно», «тиша» (10–60 с без музики там, де важливо почути слова чи паузу). "
+            "Без поля кадр продовжує попереднє. Підбирай музику під зміст: спокійніше на поясненнях, драйвовіше на "
+            "кульмінації, тиша чи «ледь чутно» на найважливішій фразі; не міняй характер частіше, ніж раз на кілька хвилин.\n")
+
+
 def frames_brief(project: dict) -> str:
     """A photo or video channel: the director only plans the frames; the montage is the next step."""
     root, studio = store.YOUTUBE_ROOT, store.app_rel()
@@ -305,7 +324,7 @@ def frames_brief(project: dict) -> str:
    Якщо sentences називає початок ролика, кадри 1–3 мають саме ці формати, це вибір автора каналу. Якщо sentences повертає host_rules, останній кадр обов’язково host, перший теж host, коли початок ролика не задає першому кадру інший формат, ведучий ніколи не йде два кадри підряд, його появи рівномірно розподілені по всій тривалості.
    Для host переважно обирай короткі завершені фрази, доречні за змістом. У межах заданої частки краще частіше показувати ведучого на коротких репліках упродовж усього ролика, ніж зосереджувати його появу в кількох довгих кадрах. Не розривай речення чи цілісну думку штучно.
 {motion_direction.PLANNING}
-3. Запиши кадри у файл {answer} так: {{"frames": [{{"sentences": [1, 2], "format": "stock_video", "idea": "..."}}]}}.
+{music_marks(project)}3. Запиши кадри у файл {answer} так: {{"frames": [{{"sentences": [1, 2], "format": "stock_video", "idea": "...", "music": "спокійна"}}]}}.
    Перевір їх командою python3 "{studio}/tools/studio.py" frames {project['id']} "{answer}" --dry-run: студія перевіряє речення,
    частки форматів і чергування та пише, що виправити. Коли перевірка проходить, запусти ту саму
    команду без --dry-run, і план кадрів піде в студію.

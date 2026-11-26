@@ -90,7 +90,7 @@ def normalize(value=None):
     result = {}
     for key, flags in (('music', {'enabled': True, 'generate': True}), ('effects', {'enabled': True})):
         part = value.get(key, {})
-        if not isinstance(part, dict) or set(part) - (set(flags) | ({'categories', 'version'} if key == 'effects' else {'style'})):
+        if not isinstance(part, dict) or set(part) - (set(flags) | ({'categories', 'version'} if key == 'effects' else {'style', 'tracks'})):
             raise ValueError('Невірні налаштування ' + key)
         result[key] = {}
         for flag, default in flags.items():
@@ -102,6 +102,11 @@ def normalize(value=None):
     if style not in MUSIC_STYLES:
         raise ValueError('Невідомий стиль музики')
     result['music']['style'] = style
+    tracks = value.get('music', {}).get('tracks')
+    if tracks is not None:
+        if not isinstance(tracks, list) or len(tracks) > 1000 or any(not isinstance(t, str) or not 1 <= len(t) <= 40 for t in tracks):
+            raise ValueError('Невірний вибір треків')
+        result['music']['tracks'] = list(dict.fromkeys(tracks))
     effects = value.get('effects', {})
     categories = effects.get('categories', [row[0] for row in CATEGORIES])
     if not isinstance(categories, list) or len(set(categories)) != len(categories):

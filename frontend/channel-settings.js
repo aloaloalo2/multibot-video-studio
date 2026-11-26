@@ -63,9 +63,10 @@ function organizeChannelSettings(channel){
   const content=document.createElement('div');content.className='channel-settings-content';
   workspace.append(nav,content);body.append(workspace);
   const definitions=[
-    ['projects','Основне','Для нових проєктів','Основне'],
-    // the channel's host and voice in one place, under «Основне», before «Побажання» (user, 16 November 2026)
-    ['avatar','Аватар і голос','Головний герой і озвучка'],
+    // the channel's host and voice lead the list, above «Основне» (user, 26 November 2026: «аватар і голос на перше
+    // місце постав над основним»)
+    ['avatar','Аватар і голос','Головний герой і озвучка','Головне'],
+    ['projects','Основне','Для нових проєктів'],
     // every wish of the channel in one place, under «Основне» (user, 15 November 2026)
     ['wishes','Побажання','Сценарій, прев’ю, монтаж'],
     // every automatic step of an episode in one place, after «Побажання» (user, 19 November 2026)
@@ -296,7 +297,21 @@ function organizeChannelSettings(channel){
   const value=id=>$(id)?.value||'';
   const fields='input:not([type=file]),select:not(#settings-source-channel):not(.heygen-voice-list),textarea,button[data-position],button[data-weight-auto],button.style-thumb[data-style],button.style-star[data-style]';
   const baseline=new Map(),resets=new Map();let ready=false,weightsValid=true,scheduled=false;
-  const save=$('modal-actions').querySelector('.primary');
+  // autosave (user, 26 November 2026): a second after the last change, while the shares add up to 100%
+  const AUTOSAVE_DELAY=1000,RETRY_DELAY=3000;
+  let autosave=null,timer=null,saving=false,failed=false;
+  const snapshot=()=>new Map([...baseline.keys()].map(field=>[field,channelSettingsFieldValue(field)]));
+  async function runSave(){
+    timer=null;if(!autosave||saving)return;
+    saving=true;failed=false;schedule();
+    try{await autosave();}
+    catch(error){
+      // a voice still uploading is waited for quietly; anything else is said once and tried again at the next change
+      if(/Дочекайтеся/.test(error.message||''))timer=setTimeout(runSave,RETRY_DELAY);
+      else{failed=true;status(error.message||'Не вдалося зберегти налаштування.',true);}
+    }finally{saving=false;schedule();}
+  }
+  const unpause=()=>{failed=false;};
   const hint=document.createElement('button');hint.type='button';hint.className='settings-save-hint';hint.disabled=true;hint.addEventListener('click',()=>{select('projects');const field=body.querySelector('[data-weight]');const group=field.closest('details');group.open=true;field.scrollIntoView({block:'nearest'});field.focus();});$('modal-actions').prepend(hint);
   function refresh(){
     if(!workspace.isConnected)return;
@@ -347,9 +362,11 @@ function organizeChannelSettings(channel){
     const dirty=ready&&channelSettingsDirty(baseline);
     const valid=weightsValid;
     body.querySelector('.settings-visual-formats').closest('details').classList.toggle('settings-invalid-weights',!valid);
-    save.disabled=!dirty||!valid||save.getAttribute('aria-busy')==='true';
-    hint.disabled=valid;hint.hidden=!dirty&&valid;
-    text(hint,!valid?'Перевірити пропорції ↗':dirty?'Є незбережені зміни':'');
+    if(dirty&&valid&&autosave&&!saving&&!failed){clearTimeout(timer);timer=setTimeout(runSave,AUTOSAVE_DELAY);}
+    else if(!dirty&&timer){clearTimeout(timer);timer=null;}
+    hint.disabled=valid;hint.hidden=valid&&!saving&&!failed;
+    text(hint,!valid?'Перевірити пропорції ↗':saving?'Зберігаємо…':failed?'Не збережено':'');
+    $('modal-actions').hidden=hint.hidden;
     tabs.projects.classList.toggle('has-settings-error',!valid);
     paintAvatarTab();
   }
@@ -367,16 +384,20 @@ function organizeChannelSettings(channel){
   }
   let refreshFrame;
   const schedule=()=>{if(!scheduled){scheduled=true;refreshFrame=requestAnimationFrame(()=>{scheduled=false;refresh();});}};
-  body.addEventListener('input',schedule);body.addEventListener('change',schedule);body.addEventListener('click',schedule);
+  body.addEventListener('input',unpause,true);body.addEventListener('change',unpause,true);body.addEventListener('click',unpause,true);body.addEventListener('input',schedule);body.addEventListener('change',schedule);body.addEventListener('click',schedule);
   heygenAvatars.addEventListener('heygen-avatar-preview',schedule);
   const observer=new MutationObserver(records=>{
     if(!workspace.isConnected){observer.disconnect();return;}
     if(records.some(record=>(record.type==='attributes'&&(record.attributeName!=='style'||record.target.id==='logo-preview'))||[...record.addedNodes].some(node=>node.nodeType===1&&(node.matches(fields)||node.querySelector(fields)))||record.target.closest?.('#style-caption,.voice-lab-reference-player,#style-strip')))schedule();
   });
   observer.observe(body,{subtree:true,childList:true,attributes:true,attributeFilter:['disabled','aria-checked','aria-pressed','src','style']});
-  body.channelSettingsCleanup=()=>{observer.disconnect();cancelAnimationFrame(refreshFrame);body.removeEventListener('input',schedule);body.removeEventListener('change',schedule);body.removeEventListener('click',schedule);body.channelSettingsCleanup=null;};
-  let previous='projects';try{previous=sessionStorage.getItem(preferenceKey)||previous;}catch{}select(previous);
-  return {select,heygenAvatar:heygenAvatars.avatarSelection,refresh:schedule,setValidity(value){weightsValid=value;schedule();},ready(){baseline.clear();refresh();ready=true;refresh();},reveal(element){
+  body.channelSettingsCleanup=()=>{
+    // a change still waiting is saved as the dialog closes: the settings are read before the dialog is replaced
+    clearTimeout(timer);timer=null;if(autosave&&ready&&weightsValid&&channelSettingsDirty(baseline))autosave()?.catch?.(error=>status(error.message||'Не вдалося зберегти налаштування.',true));
+    body.removeEventListener('input',unpause,true);body.removeEventListener('change',unpause,true);body.removeEventListener('click',unpause,true);
+    observer.disconnect();cancelAnimationFrame(refreshFrame);body.removeEventListener('input',schedule);body.removeEventListener('change',schedule);body.removeEventListener('click',schedule);body.channelSettingsCleanup=null;};
+  let previous='avatar';try{previous=sessionStorage.getItem(preferenceKey)||previous;}catch{}select(previous);
+  return {select,heygenAvatar:heygenAvatars.avatarSelection,refresh:schedule,setValidity(value){weightsValid=value;schedule();},ready(save){autosave=save||null;baseline.clear();refresh();ready=true;refresh();},snapshot,saved(mark){for(const [field,value] of mark)if(baseline.has(field))baseline.set(field,value);schedule();},reveal(element){
     const panel=element?.closest('.channel-settings-panel');if(!panel)return;
     select(panel.dataset.settingsPanel);
     for(let parent=element.parentElement;parent&&parent!==panel;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;

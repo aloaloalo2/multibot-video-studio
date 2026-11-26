@@ -3439,3 +3439,14 @@ select option{background:#232327;color:#f1f1f2}
 :focus,:focus-visible,:focus-within{outline:none!important}
 :focus-visible+*,:focus-visible~*,:focus-visible *,:has(>:focus-visible),label:has(:focus-visible){outline:none!important}
 .channel-settings-workspace .look-row:has(>summary:focus-visible){border-color:inherit}
+/* «Музична бібліотека»: one list, a track a row with its time and play/pause (26 November 2026) */
+.channel-music-library{display:flex;flex-direction:column;gap:2px}
+.channel-music-library .channel-sound-source{margin:10px 0 2px}
+.music-track{display:flex;align-items:center;gap:10px;min-width:0;padding:3px 6px;border-radius:8px}
+.music-track:hover{background:#ffffff08}
+.music-track .check{flex:1;min-width:0;display:flex;align-items:baseline;gap:10px;margin:0;font-size:14px;line-height:1.4}
+.music-track .check input{flex-shrink:0;align-self:center}
+.music-track-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.music-track .check small{color:var(--muted,#999da8);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.music-track-time{flex-shrink:0;color:var(--muted,#999da8);font-size:12px;font-variant-numeric:tabular-nums}
+.music-track .check input:disabled~span,.music-track .check input:disabled~small{opacity:.5}
