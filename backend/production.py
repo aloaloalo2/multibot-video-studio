@@ -141,6 +141,8 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
    Далі один точний пошук у бібліотеці каналу: python3 "{store.razgon_rel()}/tools/library.py" search --project {frame_progress.library_project(project)} <слова> --limit 6 --sheet <аркуш.png> і use.
    Подивись один аркуш, вибери відповідний предмет. Якщо відповідного немає, одразу підготуй промпт для генерації.
    Не переглядай бібліотеку по колу й не генеруй уже вибраний предмет заново.
+   Фон сцени на весь кадр і все, на що камера сильно наїжджає, малюй окремою картинкою в повному розмірі, не аркушем і не
+   розтягуй скриптом (resize, upscale).
    Нові предмети малює Codex аркушем по 6: промпт у assets/src/prompt_X.txt, потім
    python3 "{store.razgon_rel()}/tools/codex_image.py" --prompt <промпт> --out <assets/src/sheet_X.png> --background, потім --wait <аркуш> і tools/split_sheet.py --clean 40.
    {CODEX_BACKGROUND}
@@ -183,6 +185,15 @@ PEOPLE = ("Люди в кожному кадрі, крім кадрів веду
 PEOPLE_REAL = ("Люди на картинках живі й справжні, без стикменів, дудлів і мультяшності. Вік, зовнішність, обстановку, стиль "
                "фото й орієнтацію бери з побажань каналу до створених зображень; чого там немає, вибирай за змістом кадру. "
                "Перевіряй анатомію: руки, пальці, обличчя.")
+# A picture that fills the frame or that the camera moves in on is drawn alone, at full size: a quarter of a 2 × 2 sheet
+# is about 777 px wide, stretched 3–4 times on screen it went soft, and stretching it by a script adds no detail (user,
+# 26 November 2026: «якщо ми використовуємо кадр на весь фон… або… зближувати його… обов'язково ми малюємо в хорошій
+# якості»; Astrofizika's field background was a 777 px quarter blown up three times).
+FULL_SIZE_PICTURE_RULE = ("Картинку, яка займає весь кадр (фото на весь екран, фон сцени, інфографіка чи карта на весь кадр), і "
+                   "картинку, на яку камера сильно наїжджає, малюй окремо, одна картинка на запит, у повному розмірі, з "
+                   "усім важливим у середній смузі 16:9, і обріж до 16:9. Аркушами малюй лише те, що займає частину кадру "
+                   "(вставки, предмети, дрібні елементи). Ніколи не розтягуй картинку скриптом (resize, upscale): це не "
+                   "додає деталей; бракує розміру, то малюй картинку окремо.")
 # Every generated picture comes four to a sheet: one 16:9 image cut 2 × 2 (user, 14 November 2026: «для оптимізації
 # коштів і швидкості… 4 картинки в одній… по дефолту ми робимо просто одну картинку 16х9, і вона порізана на 4 частини»).
 SHEET_RULE = ("Створені картинки (фото, інфографіка, схема, ілюстрація чи інший елемент) малюй по чотири на одному аркуші 16:9 "
@@ -190,7 +201,8 @@ SHEET_RULE = ("Створені картинки (фото, інфографік
               "світлих картинок темними). Пропорції й орієнтація кожної картинки за побажаннями каналу; якщо там нічого не "
               "сказано, кожна четвертинка 16:9. Ріж аркуш: python3 \"{tools}/sheet_2x2.py\" АРКУШ.png --out-dir \"{folder}\" "
               "--names кадр_NNN,кадр_NNN,кадр_NNN,кадр_NNN (\"-\" пропускає клітинку). Одиночну картинку малюй тільки тоді, "
-              "коли до четвірки не вистачає кадрів. Перевір кожну картинку: зміст, текст, краї без смуг сусідньої клітинки.")
+              "коли до четвірки не вистачає кадрів. Перевір кожну картинку: зміст, текст, краї без смуг сусідньої клітинки. "
+              + FULL_SIZE_PICTURE_RULE)
 def artwork_folder(project: dict) -> str:
     """Where the frame agent keeps the pictures it cuts from its sheets: the studio's own media of the project, never the
     episode folder, which holds only the author's scripts, sources, previews and finished videos (user, 25 November 2026:

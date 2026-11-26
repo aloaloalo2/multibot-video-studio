@@ -381,3 +381,14 @@ class ProductionTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FullFrameQualityRuleTest(unittest.TestCase):
+    """A picture that fills the frame or that the camera moves in on is drawn alone at full size, never a stretched
+    quarter of a sheet (user, 26 November 2026)."""
+    def test_briefs_ask_for_full_size_backgrounds_and_forbid_stretching(self):
+        import production, production_kit, inspect
+        self.assertIn(production.FULL_SIZE_PICTURE_RULE, production.SHEET_RULE)
+        for text in (production.FULL_SIZE_PICTURE_RULE, inspect.getsource(production_kit)):
+            self.assertIn('окремою картинкою' if text is not production.FULL_SIZE_PICTURE_RULE else 'малюй окремо', text)
+            self.assertIn('upscale', text)
