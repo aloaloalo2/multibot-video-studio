@@ -354,7 +354,31 @@ def context(cid):
     return {'channel': folder.name, 'previous_titles': channel_topics.history(folder),
             'channel_agent_rules': agent_storage.get_memory(cid),
             'samples': samples, **recommended_length(cid, samples),
-            **rules, 'script_wishes': store.read_channel_settings(folder, {}).get('script_wishes', '')}
+            **rules, 'script_wishes': store.read_channel_settings(folder, {}).get('script_wishes', ''),
+            'host_views_before': host_views(cid)}
+
+
+VIEWS_KEPT = 40   # the host's views from earlier episodes the writer keeps in mind (26 November 2026)
+
+
+def views_path(cid):
+    return store.DATA_ROOT / 'channels' / cid / 'host-views.json'
+
+
+def host_views(cid):
+    """The host's own views stated in this channel's earlier scripts, newest last: the writer stays consistent with them."""
+    return [row.get('view') for row in (store.read_json(views_path(cid), []) or []) if isinstance(row, dict) and row.get('view')]
+
+
+def remember_views(cid, views, title):
+    if not views:
+        return
+    rows = store.read_json(views_path(cid), []) or []
+    rows += [{'view': view, 'title': title, 'at': time.time()} for view in views]
+    try:
+        store.atomic_json(views_path(cid), rows[-VIEWS_KEPT:])
+    except OSError:
+        pass
 
 
 def unpack(text):
@@ -460,6 +484,24 @@ CONCRETE = 'Не пиши абстрактних речень заради кр�
 
 
 # the author, 25 November 2026, on the «Космос PRO» dark matter map script: a viewer without preparation lost the thread
+# the author, 26 November 2026: «давати інформацію не банальну… що в учебниках знають… загальнодоступна… нам треба
+# інформацію… яку ми десь почули, або ж думку… того, хто пише… аутентичності треба додавати» (variants 2, 3 and 4 chosen)
+AUTHENTIC = ('Не підручник, а те, що глядач навряд чи чув (автор, 26 листопада 2026). Перш ніж писати, мовчки випиши для себе 10 '
+    'речей про цю тему, які знає кожен, хто хоч раз читав про неї: шкільні цифри, перші рядки енциклопедії, перший результат '
+    'пошуку (для Андромеди, наприклад, «два з половиною мільйони світлових років» чи «колись зіткнеться з нашою галактикою»). '
+    'Якщо формат відповіді має поле common_knowledge, поверни їх там. На цих речах не тримаються ні зачин, ні висновок, і жоден абзац не складається лише з них: '
+    'загальновідоме можна згадати одним реченням як місток до нового. '
+    'У тексті має бути людське «за кадром», те, що звучить як почуте від людини в темі: хто, коли і як це насправді відкрив, як '
+    'саме спостерігали чи виміряли (яким приладом, скільки часу, що заважало), де науковці помилялися й що вважали раніше, про що '
+    'вони сперечаються зараз, що змінилося за останні роки, дивна чи кумедна подробиця з історії відкриття. Бери лише те, у чому '
+    'впевнений; невпевнене кажи обережно, як невпевнене; нічого не вигадуй, ні людей, ні цитат, ні чисел. '
+    'Ведучий має власну позицію: дві-три його думки, з якими розумна людина може не погодитися, кожна з коротким аргументом із '
+    'щойно сказаних фактів, і одне чесне місце, де він сам не певен і каже чому. Думки звучать природно посеред розповіді, без '
+    'анонсів, як у правилі про течію думки. Якщо формат відповіді має поле host_views, поверни їх там коротко, по реченню на думку. host_views_before містить думки цього ведучого з '
+    'попередніх випусків: не суперечи їм без пояснення й не повторюй їх слово в слово. Правила каналу щодо особистих історій '
+    'лишаються: позиція не означає вигаданого особистого досвіду.')
+
+
 PLAIN = ('Зрозуміло з першого прослуховування для глядача без підготовки (автор, 25 листопада 2026: «речення… чіткі, правильні… прямі, '
          'щоб зрозумілі були, без красоти… послідовні, мало води, без непонятних слів»). '
          'Одна річ має одну просту назву на весь текст, і одне слово не означає двох різних речей: не «расчёт» то для формули Ейнштейна, то для '
@@ -905,12 +947,12 @@ def writer_brief(compact_context):
              # the author, 16 November 2026: scripts YouTube sees as authentic, not template-made
              'Пиши автентичний для YouTube текст, а не шаблонний: у ведучого є власна позиція, він оцінює, порівнює, '
              'робить свій висновок і каже його прямо як свою думку; думки сказані ясно й по суті, без загальних слів; посилань на '
-             'дослідження, дати чи імена заради переконливості не вставляй; будова, зачин і кінцівка підібрані під цю тему, а не '
+             'дослідження, дати чи імена заради переконливості (як голий аргумент «вчені довели») не вставляй, а як частину історії, хто, коли й як це знайшов, вони потрібні (див. нижче); будова, зачин і кінцівка підібрані під цю тему, а не '
              'під типовий шаблон; ролик дає глядачеві щось понад перший результат пошуку: несподіваний кут, пояснення «чому» або практичну пораду. '
              'Автентичний означає: цей текст міг сказати лише цей ведучий і лише про цю тему. Перевір так: якщо в тексті замінити '
              'тему на іншу, а сенс майже не зміниться, то текст шаблонний. Глядач має чути живу людину, яка розповідає по-своєму й '
              'звертається до нього, а не диктора, що читає довідку; позицію ведучого видно з того, що він вибирає, як пояснює і який '
-             'висновок робить із фактів, а не з окремих вставок про його думки й почуття.\n' + SCAFFOLD + '\n' + FLOW + '\n' + CONCRETE + '\n' + PLAIN + '\n'
+             'висновок робить із фактів, а не з окремих вставок про його думки й почуття.\n' + AUTHENTIC + '\n' + SCAFFOLD + '\n' + FLOW + '\n' + CONCRETE + '\n' + PLAIN + '\n'
              # the author, 16 November 2026: channels get renamed, so a script never names its channel by itself
              # the author, 17 November 2026: a hook that opened on three masses in a row
              'Починай із того, що глядач розуміє одразу й без підготовки: знайомої картинки, простої ситуації чи питання. Важкі подробиці (кілька чисел поспіль, маси, точні дати, терміни) не вантаж на зачин і на початок розповіді: вводь їх пізніше, по одній, і лише тоді, коли кожна щось пояснює глядачеві. В одному реченні щонайбільше одне число, і тільки якщо без нього не зрозуміти думку; прямий текст кращий за порівняння (автор, 19 листопада 2026: «прямий текст краще»): просте число кажи прямо словами: «вдвое больше», «сто лет», «минус двести градусов». Порівняння не роби звичкою: бери порівняння зі знайомою річчю зрідка, лише коли число таке велике чи незвичне, що глядач його не уявить, і тоді прямо, без ідіом і переносних зворотів (автор, 19 листопада 2026: «порівнювати не нада постоянно… краще сказати, якщо ця цифра проста»). Не «одна весила как тридцать шесть Солнц, другая как двадцать девять, а получилась одна на шестьдесят два», а спершу сама подія простими словами (автор, 17 листопада 2026: «з хука ми починаємо дуже з важкого… кому це треба ця інформація»). '
@@ -979,7 +1021,8 @@ def _work(cid, data):
             project = store.load_project(data['project_id'])
             original = project['voice_script']['text']
             session=data['author_session']
-            script = script_editing.self_review(project['id'],original,{**ctx,'selected_title':data['selected']['title'],'approved_opening':data.get('opening')},data['target_words'],session,
+            script = script_editing.self_review(project['id'],original,{**ctx,'selected_title':data['selected']['title'],'approved_opening':data.get('opening'),
+                **(store.read_json(root/'script-authenticity.json',{}) or {})},data['target_words'],session,
                 lambda prompt,phase: opus(prompt,root,identity+'-'+phase,cid,session=session,resume=True,cost_category='script_editing'),root/(identity+'-receipt.json'))
             writing_jobs.check()
             with LOCK:
@@ -1089,7 +1132,7 @@ def _work(cid, data):
                 result = opus(brief + '\nWrite the complete ready-to-speak script, including the selected opening verbatim. '
                     f"The full script must contain between {(data['target_words']*93+99)//100} and {data['target_words']*107//100} words, inclusive (target ±7%). Count letter words; punctuation and standalone digits are not words. Follow the title promise and channel rules. No headings, stage directions or markdown. "
                     'Do not invent studies, quotes, statistics or medical claims; use cautious factual wording for uncertain facts. '
-                    + episode_metadata.prompt(cid, data.get('project_id')) + '\nReturn JSON only {"script":"...","metadata":{"titles":["...","...","..."],'
+                    + episode_metadata.prompt(cid, data.get('project_id')) + '\nReturn JSON only {"script":"...","common_knowledge":["..."],"host_views":["..."],"metadata":{"titles":["...","...","..."],'
                     '"description":"...","tags":["...","...","..."]}}.', root, identity, cid, session=session)
                 script = result.get('script')
                 if not isinstance(script, str) or not script.strip():
@@ -1103,6 +1146,9 @@ def _work(cid, data):
                     store.atomic_json(root / 'script-draft.json', {'script': script, 'metadata': result.get('metadata'),
                                                                  'author': 'Opus', 'saved_at': time.time()})
                     store.atomic_text(root/'script-first-draft.txt',script)
+                    authentic={k:[str(x).strip() for x in (result.get(k) or []) if str(x).strip()][:12] for k in ('common_knowledge','host_views')}
+                    store.atomic_json(root/'script-authenticity.json',authentic)
+                    remember_views(cid,authentic['host_views'],data['selected']['title'])
                     store.save_project_source(project, script)
                     data.update(script_saved=True, actual_words=words(script), length=script_length(script, data['target_words']))
                     save_draft(cid, data, make_current=False)
@@ -1110,7 +1156,7 @@ def _work(cid, data):
                 data.update(editing_status='running',completed=False)
                 save_draft(cid,data,make_current=False)
                 review_identity='self-review-'+identity
-                script=script_editing.self_review(data['project_id'],script,{**ctx,'selected_title':data['selected']['title'],'approved_opening':data.get('opening')},
+                script=script_editing.self_review(data['project_id'],script,{**ctx,'selected_title':data['selected']['title'],'approved_opening':data.get('opening'),**authentic},
                     data['target_words'],session,
                     lambda prompt,phase: opus(prompt,root,review_identity+'-'+phase,cid,session=session,resume=True,cost_category='script_editing'),
                     root/(review_identity+'-receipt.json'))

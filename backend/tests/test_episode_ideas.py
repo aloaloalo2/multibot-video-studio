@@ -452,3 +452,28 @@ class TopicTransportTest(unittest.TestCase):
     def test_null_content_is_not_treated_as_text(self):
         with self.assertRaisesRegex(ValueError, 'не повернула готовий текст'):
             ideas.unpack(None)
+
+
+class AuthenticityTest(unittest.TestCase):
+    """Beyond the textbook, behind the scenes and the host's own views (author, 26 November 2026: variants 2, 3, 4)."""
+
+    def test_brief_asks_for_common_knowledge_behind_the_scenes_and_views(self):
+        brief = ideas.writer_brief({})
+        for words in ('common_knowledge', 'host_views', 'хто, коли і як це насправді відкрив', 'чесне місце'):
+            self.assertIn(words, brief)
+        import script_editing
+        self.assertTrue(any('common_knowledge' in c for c in script_editing.CRITERIA))
+        self.assertTrue(any('host_views_before' in c for c in script_editing.CRITERIA))
+
+    def test_host_views_are_kept_per_channel_newest_last_and_bounded(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp, patch.object(store, 'DATA_ROOT', Path(tmp)):
+            (Path(tmp) / 'channels' / 'c1').mkdir(parents=True)
+            ideas.remember_views('c1', ['Перша думка', 'Друга думка'], 'Ролик 1')
+            ideas.remember_views('c1', [], 'Ролик 2')
+            for n in range(ideas.VIEWS_KEPT):
+                ideas.remember_views('c1', [f'Думка {n}'], f'Ролик {n}')
+            views = ideas.host_views('c1')
+            self.assertEqual(len(views), ideas.VIEWS_KEPT)
+            self.assertEqual(views[-1], f'Думка {ideas.VIEWS_KEPT - 1}')
+            self.assertEqual(ideas.host_views('c2'), [])
