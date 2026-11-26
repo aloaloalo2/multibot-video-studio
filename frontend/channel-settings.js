@@ -1,5 +1,7 @@
 // Keep the existing controls mounted while arranging them into a small settings workspace.
 const channelSettingsPaths={
+  // a robot for «Автоматика» (user, 26 November 2026)
+  automation:'<rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 8V5M10.5 4h3M2.5 12.5v3M21.5 12.5v3M9.5 16h5"/><circle cx="9.5" cy="12.5" r=".9" fill="currentColor"/><circle cx="14.5" cy="12.5" r=".9" fill="currentColor"/>',
   publish:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4m8-4v4"/>',
   projects:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v5M8 13h3m-3 3h7"/>',
   script:'<path d="M5 3h10l4 4v14H5ZM14 3v5h5M8 12h8m-8 4h6"/>',
