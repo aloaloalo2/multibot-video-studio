@@ -7,6 +7,7 @@ so the mark stays when the folder is gone or the tag is removed.
 """
 from __future__ import annotations
 
+import contextlib
 import plistlib
 import subprocess
 import time
@@ -73,6 +74,19 @@ STARTING_MINUTES = 10   # a session opened by the button has this long to start 
 
 def queue_path() -> Path:
     return store.DATA_ROOT / 'youtube-queue.json'
+
+
+@contextlib.contextmanager
+def queue_lock():
+    """The same lock tools/youtube_publish.py takes the queue under: an episode added while a session claims another is
+    never lost (26 November 2026, three sessions published one episode)."""
+    import fcntl
+    with open(store.DATA_ROOT / 'youtube-queue.lock', 'a') as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
 
 
 def queue() -> list:
@@ -167,9 +181,10 @@ def enqueue(pid: str) -> dict:
     if (store.read_json(path(pid), {}) or {}).get('at'):
         raise store.StudioError('Цей випуск уже опубліковано', 409)
     (store.project_dir(pid) / 'publishing.json').unlink(missing_ok=True)   # a stopped attempt starts again
-    rows = [row for row in queue() if row.get('project') != pid]
-    rows.append({'project': pid, 'channel_id': project.get('channel_id'), 'at': time.time()})
-    store.atomic_json(queue_path(), rows)
+    with queue_lock():
+        rows = [row for row in queue() if row.get('project') != pid]
+        rows.append({'project': pid, 'channel_id': project.get('channel_id'), 'at': time.time()})
+        store.atomic_json(queue_path(), rows)
     # One publishing session at a time: a new one is opened only when none waits, none is publishing and none was opened
     # in the last minutes. Three episodes sent at once wait in the queue for that one session, which publishes them in
     # turn (they would otherwise fight over the file server's port).
@@ -196,9 +211,10 @@ def cancel(pid: str) -> dict:
     в студії»): the episode leaves the queue; a session already at work finds the mark at its next step
     (tools/youtube_publish.py step/endscreen/done) and stops without scheduling the video."""
     store.load_project(pid)
-    rows = queue()
-    was_queued = any(row.get('project') == pid for row in rows)
-    store.atomic_json(queue_path(), [row for row in rows if row.get('project') != pid])
+    with queue_lock():
+        rows = queue()
+        was_queued = any(row.get('project') == pid for row in rows)
+        store.atomic_json(queue_path(), [row for row in rows if row.get('project') != pid])
     marker = store.project_dir(pid) / 'publishing.json'
     state = store.read_json(marker, {}) or {}
     working = bool(state.get('at'))

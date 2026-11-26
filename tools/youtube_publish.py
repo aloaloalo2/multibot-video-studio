@@ -25,6 +25,7 @@ import signal
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -182,22 +183,73 @@ def tag_blue(folder: str | None) -> bool:
     return done.returncode == 0
 
 
+LOCK = DATA / "youtube-queue.lock"
+CLAIM_FOR = 30 * 60   # seconds an episode stays with the session that took it from the queue before another may take it
+ANOTHER = ("Інша сесія публікації вже чекає на черзі студії. Ця сесія не потрібна: не запускай wait знову і не публікуй, "
+           "скажи автору одним реченням, що публікацію веде інша сесія, і завершуй.")
+
+
+@contextmanager
+def queue_lock():
+    """One reader-writer of the queue at a time: the studio adds episodes, the waiting session takes them."""
+    import fcntl
+    with open(LOCK, "a") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def waiting(pid: int) -> bool:
+    """`pid` is a live `youtube_publish.py wait` of another session."""
+    try:
+        os.kill(int(pid), 0)
+        command = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True, timeout=5).stdout
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return False
+    return "youtube_publish.py" in command and "wait" in command
+
+
 def take(pid: str) -> None:
-    rows = [row for row in read_json(QUEUE, []) if row.get("project") != pid]
-    QUEUE.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf-8")
+    with queue_lock():
+        rows = [row for row in read_json(QUEUE, []) if row.get("project") != pid]
+        QUEUE.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf-8")
+
+
+def claim() -> str | None:
+    """The first episode no other session has taken, marked as this one's; None when there is none. Three sessions left
+    waiting at once each woke on Andromeda and uploaded it three times (user, 26 November 2026: «чому 3 сесії
+    публікують роліки?… це баг публікації»): an episode now goes to one session only."""
+    with queue_lock():
+        rows = read_json(QUEUE, [])
+        for row in rows:
+            # an episode whose project was deleted while it waited is skipped (20 November 2026)
+            if not (DATA / "projects" / str(row.get("project")) / "project.json").exists():
+                continue
+            taken = row.get("claimed") or {}
+            if taken and time.time() - float(taken.get("at") or 0) < CLAIM_FOR:
+                continue
+            row["claimed"] = {"pid": os.getpid(), "at": time.time()}
+            QUEUE.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf-8")
+            return row["project"]
+    return None
 
 
 def wait(poll: float = 5.0) -> str:
     """Blocks until an episode waits in the queue and prints its project id: the publishing session runs this in the
     background and is woken when it ends, so waiting costs no tokens (user, 19 November 2026: «я нажав і воно почало
-    працювати»)."""
-    # the studio sees a live listener by this file's pid (backend/published.listener)
-    LISTENER.write_text(json.dumps({"pid": os.getpid(), "at": time.time()}), encoding="utf-8")
+    працювати»). Only one session waits: a second one is told to finish."""
+    with queue_lock():
+        other = (read_json(LISTENER, {}) or {}).get("pid")
+        if other and int(other) != os.getpid() and waiting(int(other)):
+            raise studio.Failure(ANOTHER)
+        # the studio sees a live listener by this file's pid (backend/published.listener)
+        LISTENER.write_text(json.dumps({"pid": os.getpid(), "at": time.time()}), encoding="utf-8")
     while True:
-        # an episode whose project was deleted while it waited is skipped (20 November 2026)
-        rows = [row for row in read_json(QUEUE, []) if (DATA / "projects" / str(row.get("project")) / "project.json").exists()]
-        if rows:
-            return rows[0]["project"]
+        taken = claim()
+        if taken:
+            return taken
         time.sleep(poll)
 
 
