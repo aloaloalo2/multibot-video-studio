@@ -559,7 +559,7 @@ def _place(pid, request, job):
         store.atomic_json(receipt, record)
     move, percent = host_zoom(store.load_project_plan(pid), frame, pid)
     montage_ops.run(pid, [{'op': 'place', 'frame': frame['number'], 'asset_id': asset['id'], 'trim_start': float(record.get('head') or 0),
-                           'motion': move, 'zoom_percent': percent}])
+                           'motion': move, 'zoom_percent': percent, 'zoom_base': host_from_voice.host_base(pid, store.load_project_plan(pid), frame['number'])}])
 
 
 def zoom_percent(seconds):

@@ -296,7 +296,7 @@ function organizeChannelSettings(channel){
   const text=(selector,value)=>{const el=typeof selector==='string'?body.querySelector(selector):selector;if(el&&el.textContent!==value)el.textContent=value;};
   const selected=id=>{const el=$(id);return el?.selectedOptions?.[0]?.textContent||'';};
   const value=id=>$(id)?.value||'';
-  const fields='input:not([type=file]),select:not(#settings-source-channel):not(.heygen-voice-list),textarea,button[data-position],button[data-weight-auto],button.style-thumb[data-style],button.style-star[data-style]';
+  const fields='input:not([type=file]):not(.music-seek),select:not(#settings-source-channel):not(.heygen-voice-list),textarea,button[data-position],button[data-weight-auto],button.style-thumb[data-style],button.style-star[data-style]';
   const baseline=new Map(),resets=new Map();let ready=false,weightsValid=true,scheduled=false;
   // autosave (user, 26 November 2026): a second after the last change, while the shares add up to 100%
   const AUTOSAVE_DELAY=1000,RETRY_DELAY=3000;

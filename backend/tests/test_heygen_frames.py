@@ -302,6 +302,10 @@ class HeyGenFramesTest(unittest.TestCase):
             self.assertFalse(any(moves[i] == moves[i + 1] == moves[i + 2] for i in range(10)))
         self.assertGreater(len({tuple(m) for m in orders.values()}), 1)             # films differ
         self.assertEqual(host_from_voice.host_directions('a' * 24, 12), orders['a' * 24])   # one film stays the same
+        bases = host_from_voice.host_bases('a' * 24, 20)
+        self.assertTrue(all(0 <= b <= 6 for b in bases))
+        self.assertTrue(all(abs(x - y) >= 1.5 for x, y in zip(bases, bases[1:])))   # neighbours start differently
+        self.assertGreater(len(set(bases)), 3)
 
 
 if __name__ == '__main__':

@@ -885,9 +885,12 @@ def place(ctx: Context, spec: dict) -> None:
         if name not in MOTIONS:
             raise OpError("Рух: zoom_in, zoom_out, pan_left, pan_right або none")
         motion = MOTIONS[name]
-        if motion and name in ("zoom_in", "zoom_out") and spec.get("zoom_percent") is not None:
-            amount = 1 + max(0.0, min(30.0, float(spec["zoom_percent"]))) / 100
-            motion = (1.0, amount) if name == "zoom_in" else (amount, 1.0)
+        if motion and name in ("zoom_in", "zoom_out") and (spec.get("zoom_percent") is not None or spec.get("zoom_base") is not None):
+            # zoom_base: the nearer end of the zoom above 100% (user, 26 November 2026: «в одному 100, в другому 105, в
+            # третьому 102»), so the frames of a film do not all start or end on the whole picture
+            base = 1 + max(0.0, min(20.0, float(spec.get("zoom_base") or 0))) / 100
+            amount = base + (max(0.0, min(30.0, float(spec["zoom_percent"]))) / 100 if spec.get("zoom_percent") is not None else motion[1] - motion[0] if name == "zoom_in" else motion[0] - motion[1])
+            motion = (base, amount) if name == "zoom_in" else (amount, base)
         if motion:
             first, last = {"time": 0.0, "scale": motion[0] * cover}, {"time": length, "scale": motion[1] * cover}
             if name in ("pan_left", "pan_right"):

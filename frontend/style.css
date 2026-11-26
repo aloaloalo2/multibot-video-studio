@@ -3468,3 +3468,10 @@ select option{background:#232327;color:#f1f1f2}
 .settings-sound .sound-switch span:after{background:#8d909a}
 .settings-sound .sound-switch input:checked+span{background:#cfd1d7}
 .settings-sound .sound-switch input:checked+span:after{background:#24252b}
+/* the playing track's seek bar, a thin grey line under its row (26 November 2026) */
+.music-track{flex-wrap:wrap}
+.music-seek{flex:1 0 100%;order:10;margin:2px 0 4px 32px;height:14px;background:transparent;-webkit-appearance:none;appearance:none;cursor:pointer}
+.music-seek::-webkit-slider-runnable-track{height:3px;border-radius:2px;background:#45464e}
+.music-seek::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;margin-top:-4px;border-radius:50%;background:#cfd1d7}
+.music-seek::-moz-range-track{height:3px;border-radius:2px;background:#45464e}
+.music-seek::-moz-range-thumb{width:11px;height:11px;border:0;border-radius:50%;background:#cfd1d7}

@@ -68,6 +68,29 @@ def host_directions(seed: str, count: int) -> list[str]:
     return moves
 
 
+def host_bases(seed: str, count: int) -> list[float]:
+    """The nearer end of each host frame's zoom, in percent above the whole picture: 0 to 6 by half points in an order of
+    the film's own, two neighbours at least 1.5 apart (user, 26 November 2026: «в кожному кадрі є кадр 100%… має бути
+    якась така різнообразія. В одному 100, в другому 105, в третьому 102»)."""
+    rng = random.Random(int(hashlib.sha256(f"{seed}|host-zoom-base".encode()).hexdigest()[:16], 16))
+    bases: list[float] = []
+    while len(bases) < count:
+        pick = rng.randint(0, 12) / 2
+        if not bases or abs(pick - bases[-1]) >= 1.5:
+            bases.append(pick)
+    return bases
+
+
+def host_index(plan: dict | None, number: int) -> int:
+    hosts = [int(f.get("number") or 0) for f in (plan or {}).get("frames", []) if f.get("format") == "host"]
+    return hosts.index(number) if number in hosts else 0
+
+
+def host_base(seed: str, plan: dict | None, number: int) -> float:
+    index = host_index(plan, number)
+    return host_bases(seed, index + 1)[index]
+
+
 def host_move(seed: str, plan: dict | None, number: int) -> str:
     """The zoom of plan frame `number`, counted along the film's host frames."""
     hosts = [int(f.get("number") or 0) for f in (plan or {}).get("frames", []) if f.get("format") == "host"]
@@ -101,7 +124,7 @@ def place(pid: str, redo: bool = False) -> list[int]:
             removed.append({"op": "remove", "frame": number})
         # the host's slow 12% zoom; the first host frame comes in, the rest in this film's own order (host_directions)
         ops.append({"op": "place", "frame": number, "asset_id": asset["id"], "trim_start": start,
-                    "motion": host_move(pid, plan, number)})
+                    "motion": host_move(pid, plan, number), "zoom_base": host_base(pid, plan, number)})
     if not ops:
         return []
     if removed:

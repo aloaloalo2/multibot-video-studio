@@ -264,6 +264,18 @@ class AgentToolsTest(unittest.TestCase):
             # the plate is not a frame of the film
             self.assertNotIn("Плашка", [c["title"] for c in store.film_clips(current)])
 
+    def test_a_zoom_can_rest_above_the_whole_picture(self):
+        project = self.project(frames=1)
+        episode = Path(project["episode_path"])
+        plan = {"frames": [{"number": n, "format": "stock_photo", "start": 4.0 * (n - 1), "end": 4.0 * n, "sentences": [f"Речення {n}."]} for n in (1, 2)],
+                "timing": {"status": "audio_synced"}, "script_sha256": "x"}
+        with patch.object(store, "load_project_plan", return_value=plan):
+            status, result = self.request(f"/api/projects/{project['id']}/ops", "POST", {"ops": [
+                {"op": "place", "frame": 2, "path": str(episode / "other.png"), "motion": "zoom_out", "zoom_percent": 10, "zoom_base": 4}]})
+            self.assertEqual(status, 200, result)
+            first, last = [k["scale"] for k in self.clips(project["id"])["K002 кадр"]["keyframes"]]
+            self.assertAlmostEqual(first / last, 1.14 / 1.04, places=4)   # 114% down to 104%, not to the whole picture
+
     def test_a_photo_channel_asks_for_frames_and_the_list_shows_their_progress(self):
         project = self.project(frames=1)
         plan = {"frames": [{"number": n, "format": "stock_photo", "start": 4.0 * (n - 1), "end": 4.0 * n, "sentences": [f"Речення {n}."]} for n in range(1, 4)],
