@@ -84,7 +84,8 @@ test('new reports are sorted defensively and keep tiny tasks and previews out of
   assert.deepEqual(JSON.parse(JSON.stringify(rows.map(row=>row.id))),['production','script']);
   assert.equal(rows[0].cost,cost);
   const kit=f.context.performanceRows({runs:[],processes:[{workflow:'kit',active_ms:0,cost},{workflow:'thumbnail',active_ms:0,cost}]});
-  assert.deepEqual(JSON.parse(JSON.stringify(kit.map(row=>[row.id,row.cost_only]))),[['kit',true]]);
+  // the cover's cost shows on its own row too, with no time (26 November 2026: it was left out of «Разом»)
+  assert.deepEqual(JSON.parse(JSON.stringify(kit.map(row=>[row.id,row.cost_only]))),[['kit',true],['thumbnail',true]]);
 });
 test('costs use the saved subscription convention and explain tokens without adding another row',()=>{
   const f=fixture(),cost=f.context.performanceCost({recorded:true,providers:{claude_code:{requests:1,usd:35},openrouter:{requests:1,usd:.02}},tokens:{input:100,output:200,cache_read:300}});

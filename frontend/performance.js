@@ -17,6 +17,7 @@ const performanceKeepsWork=new Set(['production']);
 // Translations and their voices run beside the episode's own pipeline, so their time is listed but not added to
 // «Разом» (user, 15 November 2026: «переклад… паралельно… не варто сумувати до разом»); their cost still counts.
 const performanceParallel=new Set(['translation','language_voice']);
+const performanceCostOnly=new Set(['thumbnail']);   // the cover: its cost only (backend performance_summary.COST_ONLY)
 // Languages are voiced and translated side by side: two languages from 20:10 to 20:28 are 18 minutes of work, not 36
 // (user, 15 November 2026: «озвучка перекладів реально правильно рахується?… все швидше було»). Runs that overlap count
 // once; a run without a start time adds its own length.
@@ -57,7 +58,9 @@ function performanceRows(data){
   }
   for(const row of groups.values()){row.active_ms=performanceSpan(row.active);row.lost_ms=performanceSpan(row.lost);row.spans=row.active;delete row.active;delete row.lost;}
   // a process known only by its cost (a kit made before «Підготовка» had its own timing) still gets its row
-  for(const process of data.processes||[]){const workflow=performanceWorkflow(process.workflow);if(workflow&&!groups.has(workflow)&&!process.active_ms&&process.cost?.recorded)groups.set(workflow,{id:workflow,workflow,label:performanceWorkflows[workflow],active_ms:0,lost_ms:0,lost_runs:0,running:false,spans:[],cost:process.cost,cost_only:true});}
+  // and a cost with no work time of the episode, as the cover's, with the server's own label (user, 26 November 2026:
+  // «ціна не правильна»: the cover's and the host's costs were left out of «Разом»)
+  for(const process of data.processes||[]){const workflow=performanceWorkflow(process.workflow)||(performanceCostOnly.has(process.workflow)?process.workflow:null);if(workflow&&!groups.has(workflow)&&!process.active_ms&&process.cost?.recorded)groups.set(workflow,{id:workflow,workflow,label:performanceWorkflows[workflow]||process.label||workflow,active_ms:0,lost_ms:0,lost_runs:0,running:false,spans:[],cost:process.cost,cost_only:true});}
   // the longest process on top (user, 15 November 2026)
   return [...groups.values()].filter(row=>row.active_ms+row.lost_ms>1000||row.cost_only).sort((a,b)=>b.active_ms-a.active_ms||b.lost_ms-a.lost_ms);
 }
@@ -82,6 +85,7 @@ function performanceCost(cost){
   return {amount,approximate:amount>0&&(estimated||unknown),unknown,label:unknown&&!amount?'Немає даних':`${amount>0&&(estimated||unknown)?'≈ ':''}${money(amount)}${unknown&&amount?'+':''}`,title:notes.join(' ')||'Локальна обробка без витрат API.'};
 }
 const performanceIcons={
+  thumbnail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 16 5-5 4 4 3-3 6 6"/><circle cx="15.5" cy="9.5" r="1.5"/>',
   openings:'<path d="M5 4h14M5 9h14M5 14h9"/><path d="m16 17 2 2 3-4"/>',
   script:'<path d="M7 3h8l4 4v14H7z"/><path d="M15 3v4h4M10 12h6M10 16h6"/>',
   metadata:'<path d="M4 12V5h7l9 9-7 7z"/><circle cx="8.5" cy="9.5" r="1.3"/>',

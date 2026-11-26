@@ -62,7 +62,7 @@ class PerformanceSummaryTest(unittest.TestCase):
         self.assertEqual(summary.project(rows, self.root)['processes'][0]['active_ms'], 12000)
         self.assertEqual(summary.active_ms(self.run_row('script', 2000, stages={'queue': {'ms': 9000}})), 0)
 
-    def test_saved_costs_keep_steps_separate_and_exclude_all_thumbnail_costs(self):
+    def test_saved_costs_keep_steps_separate_and_the_cover_on_its_own(self):
         events = {'claude_code:openings-one': {'provider': 'claude_code', 'amount': 7, 'category': 'script'},
                   'claude_code:script-one': {'provider': 'claude_code', 'amount': 35, 'category': 'script'},
                   'openrouter:one': {'provider': 'openrouter', 'amount': .02, 'category': 'script_editing'},
@@ -79,7 +79,23 @@ class PerformanceSummaryTest(unittest.TestCase):
         self.assertEqual(result['language_voice']['providers']['elevenlabs']['usd'], .12)
         self.assertEqual(result['narration']['providers']['heygen']['usd'], 0)
         self.assertTrue(result['narration']['recorded'])
+        self.assertEqual(result['thumbnail']['providers']['openrouter']['usd'], 9)
         self.assertEqual(index.read_bytes(), original)
+
+    def test_every_cost_lands_on_a_row(self):
+        """The host's HeyGen videos and the frames' pictures are the frames' cost; the cover shows with no time
+        (26 November 2026: «ціна не правильна», $2.28 of HeyGen was left out of «Разом»)."""
+        self.save('project-costs.json', {'events': {
+            'claude_code:production-one.jsonl': {'provider': 'claude_code', 'amount': 35, 'category': 'production'},
+            'video:abc': {'provider': 'heygen', 'amount': 2.28, 'category': 'video', 'estimated': True},
+            'openrouter:img': {'provider': 'openrouter', 'amount': .07, 'category': 'image'},
+            'openrouter:cover': {'provider': 'openrouter', 'amount': .04, 'category': 'thumbnail'}}})
+        result = summary.project([self.run_row('production', 60000), self.run_row('thumbnail', 30000)], self.root)
+        rows = {row['workflow']: row for row in result['processes']}
+        self.assertEqual(rows['production']['cost']['providers']['heygen']['usd'], 2.28)
+        self.assertEqual(rows['production']['cost']['providers']['openrouter']['usd'], .07)
+        self.assertEqual((rows['thumbnail']['active_ms'], rows['thumbnail']['cost']['providers']['openrouter']['usd']), (0., .04))
+        self.assertEqual(result['total_ms'], 60000)
 
     def test_latest_spend_snapshot_is_used_once_without_reading_or_creating_a_log(self):
         log = str(self.root / 'production-one.jsonl')

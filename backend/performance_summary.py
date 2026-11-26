@@ -8,10 +8,12 @@ LABELS = {
     'openings': 'Зачини', 'script': 'Сценарій', 'metadata': 'Метадані',
     'narration': 'Озвучка', 'analysis': 'Розпізнавання озвучки',
     'planning': 'План кадрів', 'kit': 'Підготовка', 'production': 'Створення кадрів', 'export': 'Експорт',
-    'translation': 'Переклад', 'language_voice': 'Озвучка перекладів', 'publication': 'Публікація на YouTube',
+    'translation': 'Переклад', 'language_voice': 'Озвучка перекладів', 'thumbnail': 'Прев\u2019ю',
+    'publication': 'Публікація на YouTube',
 }
 ALIASES = {'language_sample': 'language_voice', 'language_save': 'language_voice', 'language_refit': 'language_voice'}
 LOCAL = {'analysis', 'export'}
+COST_ONLY = {'thumbnail'}   # the cover is made beside the film: its cost shows, its time is not work on the episode
 TOKEN_KEYS = ('input', 'output', 'cache_read', 'cache_write')
 
 
@@ -35,8 +37,12 @@ def event_workflow(identity, event):
     if explicit:
         return workflow(explicit)
     category = event.get('category')
+    # every cost of the episode lands on a row (user, 26 November 2026: «ціна не правильна»): the host's HeyGen videos
+    # and the frames' drawn pictures belong to the frames, the cover to its own row; they were left out of «Разом»
     if category in {'thumbnail', 'legacy_thumbnail', 'language_thumbnail'}:
-        return None
+        return 'thumbnail'
+    if category in {'video', 'image'}:
+        return 'production'
     name = Path(identity.split(':', 1)[-1]).name
     if name.startswith('director-kit') or '-session-900' in name:
         return 'kit'   # the film's kit: early after the director, or first in the frames' run (production_kit.KIT_INDEX)
@@ -152,7 +158,7 @@ def project(runs, root):
     running = False
     for row in runs:
         kind = workflow(row.get('workflow'))
-        if not kind:
+        if not kind or kind in COST_ONLY:
             continue
         live = row.get('status') == 'running'
         running |= live
@@ -177,12 +183,13 @@ def project(runs, root):
             continue
         group['cost'] = costs.get(group['workflow'], {'recorded': False})
         rows.append(group)
-    # a kit made before it had its own timing: its cost still shows on its own row, with no time
-    kit = costs.get('kit') or {}
-    if 'kit' not in {row['workflow'] for row in rows} and any(
-            project_costs.number((value or {}).get('amount')) and value['amount'] > 0 for value in (kit.get('providers') or {}).values()):
-        rows.append({'id': 'kit', 'workflow': 'kit', 'label': LABELS['kit'], 'active_ms': 0., 'running': False,
-                     'lost_ms': 0., 'lost_runs': 0, 'cost': kit})
+    # a cost with no timed run (a kit made before it had its own timing, a cover): its own row, with no time
+    shown = {row['workflow'] for row in rows}
+    for kind, cost in costs.items():
+        if kind not in shown and any(project_costs.number((value or {}).get('amount')) and value['amount'] > 0
+                                     for value in (cost.get('providers') or {}).values()):
+            rows.append({'id': kind, 'workflow': kind, 'label': LABELS[kind], 'active_ms': 0., 'running': False,
+                         'lost_ms': 0., 'lost_runs': 0, 'cost': cost})
     rows.sort(key=lambda row: ORDER[row['workflow']])
     return {'processes': rows, 'running': running,
             'total_ms': round(sum(row['active_ms'] for row in rows), 2),
