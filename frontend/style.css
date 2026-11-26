@@ -22,7 +22,7 @@ input:focus,input:focus-visible,select:focus,select:focus-visible,textarea:focus
 .app-shell.agent-open{height:100dvh;min-height:0}
 .sidebar{border:0;padding:0 11px 17px;display:flex;flex-direction:column;min-height:0}
 .sidebar>.brand{height:64px;flex:none;margin:0 -11px;padding:9px 19px}
-.brand{display:flex;align-items:center;gap:9px;padding:2px 8px 22px;border-bottom:1px solid #303034}
+.brand{display:flex;align-items:center;gap:9px;padding:2px 8px 22px;border-bottom:1px solid #1d1d1f}
 .brand strong{display:block;font-size:16px;font-weight:600;line-height:1.1}
 .brand span{display:block;margin-top:4px;color:#777981;font-size:10px;letter-spacing:.17em}
 .editor-brand{padding:0 15px 0 0;border:0;flex:none}
@@ -46,7 +46,7 @@ input:focus,input:focus-visible,select:focus,select:focus-visible,textarea:focus
 .sidebar-bottom button{background:none;border:0;color:#aaaeb8;padding:9px 11px;text-align:left;border-radius:10px;width:100%}
 .sidebar-bottom button:hover{background:#242428}
 .main{min-width:0;min-height:0;display:flex;flex-direction:column}
-.topbar{height:64px;flex:none;border-bottom:1px solid #303034;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 17px}
+.topbar{height:64px;flex:none;border-bottom:1px solid #1d1d1f;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 17px}
 .editor-open .topbar{display:grid;grid-template-columns:auto minmax(0,1fr) auto;height:auto;min-height:64px}
 .editor-open .project-heading{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:3px}
 .editor-open .project-title{width:100%;max-width:100%;display:grid;grid-template-columns:32px minmax(0,1fr);column-gap:11px;row-gap:2px;align-items:center}
@@ -257,7 +257,7 @@ button.danger:hover:not(:disabled){background:#523034}
 @media(prefers-reduced-motion:reduce){.export-spinner{animation:none}}
 .overview-empty{padding:35px;border:1px dashed #444449;border-radius:15px;color:#a9abb2;grid-column:1/-1;text-align:center}
 .overview-empty strong{display:block;font-size:16px;color:#f1f1f2;margin-bottom:5px}
-.project-views{display:flex;gap:8px;border-bottom:1px solid #303034;padding:10px 17px;flex:none}
+.project-views{display:flex;gap:8px;border-bottom:1px solid #1d1d1f;padding:10px 17px;flex:none}
 .project-views button{border:1px solid #424248;border-radius:9px;background:#242428;color:#b9bbc3;padding:8px 13px}
 .project-views button{display:flex;align-items:center;gap:7px}
 .project-views svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
@@ -346,10 +346,10 @@ button.danger:hover:not(:disabled){background:#523034}
 }
 @media(max-width:760px){.workspace.animation-workspace{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:900px){.workspace.creation-workspace{grid-template-columns:minmax(0,1fr)}.animation-production{max-height:360px}}
-.panel,.timeline-panel{background:#181819;border:1px solid #303034;border-radius:14px;min-width:0;overflow:hidden}
+.panel,.timeline-panel{background:#181819;border:1px solid #1d1d1f;border-radius:14px;min-width:0;overflow:hidden}
 .panel{display:flex;flex-direction:column}
 .panel-title,.library-tabs,.transition-shelf,.search,.transport{flex-shrink:0}
-.panel-title{min-height:41px;border-bottom:1px solid #303034;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.panel-title{min-height:41px;border-bottom:1px solid #1d1d1f;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;gap:8px}
 .panel-title h2,.timeline-toolbar h2{font-size:14px;font-weight:600;margin:0}
 .panel-title .icon-button,.modal-head .icon-button{flex:none}
 .panel-title span{color:#96989f;font-size:11px;white-space:nowrap}
@@ -455,7 +455,7 @@ button.danger:hover:not(:disabled){background:#523034}
 .composition-tabs{display:flex;flex:1;min-width:0;align-items:stretch;gap:2px;height:28px;padding:0;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}
 .composition-tab-wrap{display:flex;flex-shrink:0}
 .composition-tab{font-size:11px;padding:5px 11px;white-space:nowrap;border:0;border-radius:0;background:#232328;color:#aeadb5;cursor:pointer;flex-shrink:0}
-.composition-tab.active{color:#f1d18a;background:#303034;box-shadow:inset 0 -2px #dfb953}
+.composition-tab.active{color:#f1d18a;background:#1d1d1f;box-shadow:inset 0 -2px #dfb953}
 .composition-close{border:0;border-radius:0;background:#232328;color:#aeadb5;padding:4px 6px;font-size:11px}
 .timeline-toolbar .timeline-spacer{display:none}
 .timeline-toolbar #zoom-value{min-width:42px;font-size:10px;text-align:center;cursor:pointer}
@@ -3480,5 +3480,5 @@ select option{background:#232327;color:#f1f1f2}
 .music-track.active .music-track-time{color:#d5d8df}
 .timeline-toolbar .timeline-zoom,.timeline-toolbar .timeline-zoom button{height:24px}
 .composition-main-tab[hidden]{display:none!important}
-/* the script while Opus writes it: no frame around the whole column (user, 26 November 2026: «тут окно ціле… бордер») */
-#editor-production:has(> .episode-draft-panel){border:0}
+/* the studio's frame lines, #303034 before, are 40% darker everywhere (#1d1d1f; user, 26 November 2026: «на 40%… темнішу…
+   всій студії») and stay around the montage's left column in every state */
