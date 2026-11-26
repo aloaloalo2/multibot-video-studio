@@ -398,3 +398,22 @@ class WritingAndAppearanceSoundsTest(unittest.TestCase):
         self.assertEqual(writing[0]['t'], 16.0 + soundtrack.KEYS_DELAY)   # the keys a moment after the first letter
         self.assertLessEqual(writing[-1]['t'] + writing[-1]['dur'], 19.9)
 
+
+
+class ChannelLevelsTest(unittest.TestCase):
+    """The music and SFX volumes set on a film stay the channel's default (26 November 2026)."""
+
+    def test_levels_are_kept_and_checked(self):
+        import sound_settings
+        merged = sound_settings.merge({'music': {'enabled': True}}, {'levels': {'music': .05}})
+        merged = sound_settings.merge(merged, {'levels': {'sfx': .09}})
+        self.assertEqual(merged['levels'], {'music': .05, 'sfx': .09})
+        self.assertEqual(sound_settings.merge(merged, {'music': {'enabled': False}})['levels'], {'music': .05, 'sfx': .09})
+        with self.assertRaises(ValueError):
+            sound_settings.merge(merged, {'levels': {'music': 3}})
+
+    def test_new_films_take_the_channel_level(self):
+        import soundtrack
+        self.assertEqual(soundtrack.channel_level({'levels': {'music': .05}}, 'music', .12), .05)
+        self.assertEqual(soundtrack.channel_level({'levels': {'music': .05}}, 'sfx', .07), .07)
+        self.assertEqual(soundtrack.channel_level({}, 'music', .12), .12)

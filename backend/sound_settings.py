@@ -85,7 +85,7 @@ def merge(current, patch):
 def normalize(value=None):
     if value is None:
         value = {}
-    if not isinstance(value, dict) or set(value) - {'music', 'effects', 'transitions', 'library'}:
+    if not isinstance(value, dict) or set(value) - {'music', 'effects', 'transitions', 'library', 'levels'}:
         raise ValueError('Невірні налаштування звуку')
     result = {}
     for key, flags in (('music', {'enabled': True, 'generate': True}), ('effects', {'enabled': True})):
@@ -146,6 +146,14 @@ def normalize(value=None):
                     or len(set(ids)) != len(ids)):
                 raise ValueError('Невідомий або повторений SFX')
             result['library']['ids'] = list(ids)
+    if 'levels' in value:
+        # the music and SFX rows' volumes the author last set on a film of the channel, the next films' default
+        # (user, 26 November 2026: «нехай запам'ятовує гучність… для наступних роликів по дефолту»)
+        levels = value['levels']
+        if not isinstance(levels, dict) or set(levels) - {'music', 'sfx'} or any(
+                isinstance(v, bool) or not isinstance(v, (int, float)) or not 0 <= v <= 1.2 for v in levels.values()):
+            raise ValueError('Невірна гучність музики чи SFX')
+        result['levels'] = {key: round(float(v), 3) for key, v in levels.items()}
     return result
 
 

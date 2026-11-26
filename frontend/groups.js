@@ -207,7 +207,7 @@ function soundLane(entry){
   title.addEventListener('click',event=>selectTimelineIds(entry.soundItems.map(item=>item.clip.id),event.metaKey||event.ctrlKey||event.shiftKey));label.append(title);
   const lane=document.createElement('div');lane.className='track-lane universal-lane';lane.style.width=timelineWidth()+'px';
   for(const item of entry.soundItems)appendGroupedMediaClip(lane,item);
-  row.append(label,lane);addLayerSoundControl(label,[...new Set(entry.soundItems.map(item=>item.layer))],entry.title);return row;
+  row.append(label,lane);addLayerSoundControl(label,[...new Set(entry.soundItems.map(item=>item.layer))],entry.title,entry.soundFamily);return row;
 }
 
 function renderGroupedTimelineWithIndex(){

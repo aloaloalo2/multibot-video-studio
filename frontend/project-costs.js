@@ -24,6 +24,8 @@ function projectCostMarkup(data){
     const item=data?.providers?.[key],rawAmount=item?.usd;
     if(item&&item.amount===0&&!item.unknown)return '';
     const amount=key==='claude_code'&&rawAmount!=null?rawAmount/claudeSubscriptionDivisor:rawAmount;
+    // under a cent is not shown on the card (user, 26 November 2026: «0.00ххх… не показуй, від 0.01 показувати»)
+    if(item&&!item.unknown&&amount!=null&&Number.isFinite(Number(amount))&&Number(amount)<.01)return '';   // a known amount only; an estimate still pending stays «≈ $…»
     const approximate=key==='claude_code'||item?.estimated||item?.equivalent||item?.unknown;
     const label=item?`${approximate?'≈ ':''}${projectCostMoney(item.unknown&&!amount?null:amount)}`:'…';
     const detail=key==='claude_code'?`Орієнтовна частка підписки: API-еквівалент ${projectCostMoney(rawAmount)} ÷ ${claudeSubscriptionDivisor}. Коефіцієнт задано користувачем.`:key==='elevenlabs'?`Оцінка за збереженими запитами озвучення. ${data?.elevenlabs_basis||'Курс кредитів ще невідомий.'}`:key==='fishaudio'?'Оцінка витрат Fish Audio за новими запитами озвучення. Кеш повторно не оплачується.':key==='heygen'?'Оцінка витрат HeyGen за новими запитами озвучення. Кеш повторно не оплачується.':'Збережені витрати API: переклади, перевірки, агент і зображення.';

@@ -28,6 +28,12 @@ def music_volume(path) -> float:
     return round(max(0.02, min(0.5, 10 ** (db / 20))), 3)
 
 
+def channel_level(sound: dict, family: str, default: float) -> float:
+    """The volume the author last set on the channel's music or SFX row (sound_settings 'levels'), else the studio's."""
+    level = ((sound or {}).get('levels') or {}).get(family)
+    return float(level) if isinstance(level, (int, float)) and not isinstance(level, bool) else default
+
+
 PREFIX = 'Звук ролика · '
 TRANSITION_PREFIX = 'Звук переходу · '
 TYPING_PREFIX = 'Звук друку · '
@@ -295,7 +301,7 @@ def place(ctx, spec, *, transition=False, typing=False, drawing=False, appear=Fa
         tracks_used = len({s['track'] for s in segments if s['track']})
         quiet = sum(s['end'] - s['start'] for s in segments if not s['track'] or s['level'] == 0)
         ctx.report.append(f"музика з бібліотеки: треків {tracks_used}, без музики {quiet:.0f} с")
-        add(path, PREFIX + 'музика', 0.0, total, music_volume(path))
+        add(path, PREFIX + 'музика', 0.0, total, channel_level(sound, 'music', music_volume(path)))
     elif use_music:
         module = sound_settings.audio_module('music')
         if spec.get('mood') is not None and spec['mood'] not in module.MOODS:
@@ -324,7 +330,7 @@ def place(ctx, spec, *, transition=False, typing=False, drawing=False, appear=Fa
                     wav.unlink(missing_ok=True)
                     path.with_suffix('.pending.flac').unlink(missing_ok=True)
         ctx.report.append(f"музика: {pick['style']}, {pick['mood']}, тональність {pick['key']}, темп ×{pick['tempo']}")
-        add(path, PREFIX + 'музика', 0.0, total, music_volume(path))
+        add(path, PREFIX + 'музика', 0.0, total, channel_level(sound, 'music', music_volume(path)))
     for cue in events:
         key = hashlib.sha256(json.dumps(cue, sort_keys=True).encode()).hexdigest()[:16]
         row = library.get(cue['name'])
@@ -354,7 +360,7 @@ def place(ctx, spec, *, transition=False, typing=False, drawing=False, appear=Fa
         # typing has no single peak: it starts with the first letter
         hit = cue['t'] if typing or drawing or cue.get('from_start') else (cue['hit'] if 'hit' in cue else cue['t'] + (cue['dur'] / 2 if transition else 0)) - _peak(measured)
         start = round(max(0.0, min(hit, total - .1)), 3)
-        add(path, title, start, max(.1, min(length, total - start)), min(1.5, SFX_VOLUME * 10 ** ((cue.get('gain', -8) + 8) / 20)))
+        add(path, title, start, max(.1, min(length, total - start)), min(1.5, channel_level(sound, 'sfx', SFX_VOLUME) * 10 ** ((cue.get('gain', -8) + 8) / 20)))
     ctx.report.append(f'звук: музика {int(use_music)}, дозволених подій {len(events)}')
 
 

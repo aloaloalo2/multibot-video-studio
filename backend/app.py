@@ -2148,6 +2148,14 @@ class Handler(BaseHTTPRequestHandler):
         draft = re.fullmatch(r'/api/projects/([0-9a-f]{24})/script-draft(/restore)?', path)
         if draft and method == ('POST' if draft.group(2) else 'PATCH'):
             return self.json_response(script_drafts.restore(draft.group(1), body) if draft.group(2) else script_drafts.save(draft.group(1), body))
+        # the music or SFX row's volume set on a film, kept as the channel's default for its next films (26 November 2026)
+        match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/sound-level", path)
+        if match and method == "POST":
+            family, volume = (body or {}).get("family"), (body or {}).get("volume")
+            if family not in ("music", "sfx") or isinstance(volume, bool) or not isinstance(volume, (int, float)):
+                raise store.StudioError("Невірна гучність", 400)
+            channel = store.update_channel_settings(match.group(1), {"sound": {"levels": {family: float(volume)}}})
+            return self.json_response({"levels": ((channel.get("settings") or {}).get("sound") or {}).get("levels", {})})
         # «Власна ідея» of a new episode: five DeepSeek titles for the author's idea (22 November 2026)
         match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/idea-titles", path)
         if match and method == "POST":
