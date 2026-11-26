@@ -38,7 +38,7 @@ test('opening the idea dialog reads settings without creating a project or start
   assert.equal(h.button.disabled,false);
   assert.deepEqual(h.used,[]);
   assert.equal(h.pickers.length,1);assert.equal(h.pickers[0].select,h.fields.channel);assert.equal(h.pickers[0].options.picture('own'),'<i>own</i>');
-  assert.equal(h.wishesLabel.hidden,false); // the style choice shows while the competitor's thumbnail is used
+  assert.equal(h.wishesLabel.hidden,true); // «Адаптувати під мій стиль» is gone (26 November 2026)
 });
 test('unchecked source sends title-only choice and duplicate clicks share one request',async()=>{
   const reply=deferred(),h=harness({submitReply:reply});h.open();await tick();h.fields.use_thumbnail.checked=false;
@@ -78,7 +78,7 @@ test('host choice reaches the idea request and resets when the selected channel 
   const h=harness();h.open();await tick();
   h.fields.use_hero.checked=false;h.fields.use_wishes.checked=true;await h.action.run();
   const body=h.calls.find(c=>c.method==='POST').body;
-  assert.equal(body.use_hero,false);assert.equal(body.use_channel_wishes,true);
+  assert.equal(body.use_hero,false);assert.equal(body.use_channel_wishes,false);   // the hidden style choice is never sent on
   const other=harness();other.open();await tick();other.fields.channel.value='other';other.fields.channel.onchange();
   assert.equal(other.fields.use_hero.checked,false);assert.equal(other.fields.use_hero.disabled,true);
   assert.equal(other.heroLabel.hidden,true); // a channel without a host shows no host choice at all

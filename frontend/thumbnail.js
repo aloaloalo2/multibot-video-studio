@@ -131,7 +131,7 @@ function setupThumbnailModes(project,data){
     backdrop.dataset.thumbnailMode=mode;
     for(const button of buttons)button.setAttribute('aria-pressed',String(button.dataset.thumbMode===mode));
     $('thumb-reference-field').hidden=mode!=='clone';
-    if($('thumb-wishes-choice'))$('thumb-wishes-choice').hidden=mode!=='clone';   // a new thumbnail always follows the channel's wishes
+    if($('thumb-wishes-choice'))$('thumb-wishes-choice').hidden=true;   // «Адаптувати під мій стиль» is gone (user, 26 November 2026: «крок до шаблонізації»)
     $('thumb-create-wishes').placeholder=mode==='clone'?'Вкажіть побажання або правки до клонованого прев’ю…':'Вкажіть побажання для нового прев’ю…';
     note('');
     updateReferenceView();

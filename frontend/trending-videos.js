@@ -166,14 +166,14 @@ function openTrendingIdea(video, preferredChannel='', onUsed=()=>{}){
     const field=root.querySelector('[name="use_hero"]'),hasHero=!!channels.find(channel=>channel.id===root.querySelector('[name="channel"]').value)?.hero_reference;
     const heroUrl=channels.find(channel=>channel.id===root.querySelector('[name="channel"]').value)?.hero_reference?.url;
     root.querySelector('.trend-hero-avatar').innerHTML=heroAvatar(heroUrl);
-    styleThumbs(root.querySelector('[name="channel"]').value);
+    // no style thumbnails to read: «Адаптувати під мій стиль» is gone
     field.disabled=sending||!hasHero||!root.querySelector('[name="use_thumbnail"]').checked;
     field.closest('label').hidden=!hasHero;   // a channel without a host shows no host choice at all
     if(!hasHero)field.checked=false;
     field.closest('label').title=hasHero?'':'Додайте ведучого в налаштуваннях каналу';
     // «Адаптувати під мій стиль»: the competitor's idea drawn in our channel's look (our recent thumbnails and wishes)
     const wishes=root.querySelector('[name="use_wishes"]');
-    wishes.closest('label').hidden=!root.querySelector('[name="use_thumbnail"]').checked;
+    wishes.closest('label').hidden=true;wishes.checked=false;   // «Адаптувати під мій стиль» is gone (user, 26 November 2026: «крок до шаблонізації»)
     wishes.closest('label').title='Ідея з прев’ю конкурента, а стиль з наших прев’ю й побажань каналу';
     wishes.disabled=sending;
   };
