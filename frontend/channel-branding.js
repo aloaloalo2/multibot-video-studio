@@ -63,6 +63,8 @@ function brandingSections(channel,projectDefaults=''){
       <p class="regular-only style-note">Як виглядають кадри 2D-анімації Razgon у звичайних роликах каналу.</p>
       <div class="channel-typeface"><span id="channel-font-label">Шрифт каналу</span><select id="style-title-font" hidden>${studioFontOptionsHtml()}</select>
         <details class="channel-font-picker"><summary aria-labelledby="channel-font-label channel-font-current"><span id="channel-font-current"></span><span aria-hidden="true">⌄</span></summary><div class="channel-font-menu" role="listbox" aria-labelledby="channel-font-label"></div></details></div>
+      ${/* two more fonts to combine with the main one in motion design and captions (user, 26 November 2026) */''}
+      <div class="channel-typeface-more"><label>Другий шрифт<select id="style-second-font"><option value="">Немає</option>${studioFontOptionsHtml()}</select></label><label>Додатковий шрифт<select id="style-extra-font"><option value="">Немає</option>${studioFontOptionsHtml()}</select></label></div>
       <div class="logo-preview" id="logo-preview"><canvas id="style-card-text" width="1920" height="1080" aria-hidden="true" hidden></canvas><img id="logo-preview-image" class="logo-mark" alt=""><span id="style-stage-state" class="style-stage-state" role="status" aria-live="polite"></span></div>
       <div><p id="style-caption" class="style-caption"></p>
         <div id="style-strip" class="style-strip" role="radiogroup" aria-label="Стиль анімації"></div><input id="style-copy-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
@@ -324,6 +326,12 @@ function bindBranding(channel){
       await loadStyles(false);
     }catch(error){busy=false;stage.textContent=error.message;renderStrip();}
   });
+  for(const [id,key] of [['style-second-font','second_font_family'],['style-extra-font','extra_font_family']]){
+    const select=$(id),saved=channel.settings?.typography?.[key]||'';
+    select.value=[...select.options].some(option=>option.value===saved)?saved:'';
+    const paint=()=>{select.style.fontFamily=select.value?JSON.stringify(select.value)+', sans-serif':'';};
+    select.addEventListener('change',paint);paint();
+  }
   const fontSelect=$('style-title-font'),fontCurrent=$('channel-font-current');
   const fontPicker=fontCurrent.closest('details'),fontMenu=fontPicker.querySelector('.channel-font-menu');
   const fontTrigger=fontPicker.querySelector('summary');

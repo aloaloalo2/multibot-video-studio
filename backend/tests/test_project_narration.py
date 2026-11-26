@@ -23,10 +23,11 @@ class NarrationTests(unittest.TestCase):
 
     def test_cache_changes_only_edited_phrase(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path=Path(tmp);settings=lab.validated({'text':'Some sample text.','eleven_sentences':1})   # a request a sentence
+            path=Path(tmp);settings=lab.validated({'text':'Some sample text.'})
             profile={'settings':settings,'reference':{'sha256':'voice'}}
             project={'id':'0'*24,'channel_id':'1'*16}
-            with patch.object(store,'project_dir',return_value=path),patch.object(store,'DATA_ROOT',path),patch.object(lab,'snapshot',return_value=profile),patch.object(lab.eleven_api,'balance',return_value={'credit_usd_rate':.00022}):
+            # a request a sentence: the cache of one edited phrase, whatever the automatic group (lab.sentences_per_request)
+            with patch.object(lab,'sentences_per_request',return_value=1),patch.object(store,'project_dir',return_value=path),patch.object(store,'DATA_ROOT',path),patch.object(lab,'snapshot',return_value=profile),patch.object(lab.eleven_api,'balance',return_value={'credit_usd_rate':.00022}):
                 _,_,entries,_=narration.spec(project,'First sentence. Second sentence.')
                 for entry in entries:(narration.root(project['id'])/(entry['key']+'.mp3')).write_bytes(b'cached')
                 _,_,updated,quote=narration.spec(project,'First sentence. Changed sentence.')

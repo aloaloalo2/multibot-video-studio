@@ -50,22 +50,28 @@ SENTENCES_MAX = 10
 SENTENCES_FREE = 3
 
 
+ELEVEN_GROUP = 3   # smaller parts than a paragraph (user, 26 November 2026: «меншими партіями»)
+PARAGRAPH = 1000   # «a whole paragraph»: units() still cuts one longer than the service's limit into even parts
+
+
 def sentences_per_request(settings):
-    """How many sentences of a paragraph one request reads: HeyGen (not Starfish) and ElevenLabs by their setting, 1 for
-    the other services."""
+    """How many sentences one request reads, automatically: a whole paragraph on HeyGen (not Starfish), three on ElevenLabs
+    (user, 26 November 2026: «прибрати цю настройку… якими частинами… одні настройки автоматичні»). A paragraph read at
+    once keeps its intonation whole, its break stays a real pause, and fewer requests mean less waiting on HeyGen's free
+    queue; the price counts characters, not requests. A paragraph over the service's limit is cut evenly at sentences
+    (group_chars). The old «Речень за один запит» and «Склеювати абзаци» settings are ignored. One sentence for the
+    other services."""
     if settings.get('provider') == 'elevenlabs':
-        chosen = settings.get('eleven_sentences') or 0
-        return chosen if type(chosen) is int and 1 <= chosen <= ELEVEN_SENTENCES_MAX else ELEVEN_SENTENCES_DEFAULT
+        # ElevenLabs is fast at any size: groups of three sentences of a paragraph, several at once (user, 26 November
+        # 2026: «для Eleven Labs… як зараз… по три речення чи по чотири… автоматично»)
+        return ELEVEN_GROUP
     if settings.get('provider') != 'heygen' or settings.get('heygen_model') == 'starfish':
         return 1
-    chosen = settings.get('heygen_sentences') or 0
-    if type(chosen) is int and 1 <= chosen <= SENTENCES_MAX:
-        return chosen
-    return SENTENCES_FREE if settings.get('heygen_model') == 'heygen-voice-1-turbo-free' else 1
+    return PARAGRAPH
 
 
 def joins_paragraphs(settings):
-    return settings.get('provider') == 'heygen' and sentences_per_request(settings) > 1 and settings.get('heygen_join_paragraphs') is True
+    return False   # paragraphs are never joined: their breaks are the narration's natural pauses
 
 
 def group_chars(settings):

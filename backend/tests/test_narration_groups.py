@@ -32,8 +32,7 @@ class UnitsTest(unittest.TestCase):
         self.assertEqual([u['sentences'] for u in joined], [7])
         self.assertEqual(joined[0]['text'], ' '.join(narration.phrases(self.text)))   # as a revision rebuilds it
         free = lab.validated({'provider': 'heygen', 'heygen_join_paragraphs': True})
-        self.assertTrue(lab.joins_paragraphs(free))
-        self.assertFalse(lab.joins_paragraphs({**free, 'heygen_sentences': 1}))
+        self.assertFalse(lab.joins_paragraphs(free))   # paragraphs are never joined now (26 November 2026)
         with self.assertRaises(store.StudioError):
             lab.validated({'heygen_join_paragraphs': 'yes'})
 
@@ -49,23 +48,21 @@ class UnitsTest(unittest.TestCase):
 
 
 class SettingTest(unittest.TestCase):
-    def test_turbo_free_reads_three_by_default_and_paid_models_one(self):
+    def test_requests_are_a_paragraph_on_heygen_and_three_sentences_on_elevenlabs(self):
+        # the old per-request settings are ignored: automatic groups (user, 26 November 2026: «прибрати цю настройку…
+        # одні настройки автоматичні», «для Eleven Labs… меншими партіями… по три речення»)
         free = lab.validated({'provider': 'heygen', 'heygen_model': 'heygen-voice-1-turbo-free'})
         paid = lab.validated({'provider': 'heygen', 'heygen_model': 'heygen-voice-1-turbo'})
-        self.assertEqual(free['heygen_sentences'], 0)
-        self.assertEqual(lab.sentences_per_request(free), 3)
-        self.assertEqual(lab.sentences_per_request(paid), 1)
-        self.assertEqual(lab.sentences_per_request({**paid, 'heygen_sentences': 4}), 4)
-        self.assertEqual(lab.sentences_per_request({**free, 'heygen_sentences': 1}), 1)
+        self.assertEqual(lab.sentences_per_request(free), lab.PARAGRAPH)
+        self.assertEqual(lab.sentences_per_request({**paid, 'heygen_sentences': 4}), lab.PARAGRAPH)
         self.assertEqual(lab.sentences_per_request({**free, 'heygen_model': 'starfish', 'heygen_sentences': 5}), 1)
-        # ElevenLabs reads its own groups, 5 sentences by default, up to 20 (user, 23 November 2026)
         eleven = lab.validated({'provider': 'elevenlabs', 'heygen_sentences': 9})
-        self.assertEqual(lab.sentences_per_request(eleven), lab.ELEVEN_SENTENCES_DEFAULT)
-        self.assertEqual(lab.sentences_per_request({**eleven, 'eleven_sentences': 20}), 20)
+        self.assertEqual(lab.sentences_per_request(eleven), 3)
+        self.assertEqual(lab.sentences_per_request({**eleven, 'eleven_sentences': 20}), 3)
         self.assertEqual(lab.group_chars({**eleven, 'model': 'eleven_v4_turbo'}), 1800)
         self.assertFalse(lab.joins_paragraphs({**eleven, 'heygen_join_paragraphs': True}))
         with self.assertRaises(Exception):
-            lab.validated({'provider': 'elevenlabs', 'eleven_sentences': 21})
+            lab.validated({'provider': 'elevenlabs', 'eleven_sentences': 21})   # an old saved value is still checked
 
     def test_the_setting_is_one_to_five(self):
         self.assertEqual(lab.validated({'heygen_sentences': 5})['heygen_sentences'], 5)
@@ -93,10 +90,11 @@ class SpecTest(unittest.TestCase):
             item.start()
             self.addCleanup(item.stop)
 
-    def test_a_turbo_free_narration_sends_a_request_a_group(self):
+    def test_a_heygen_narration_sends_a_request_a_paragraph(self):
         _, _, entries, quote = narration.spec({'id': 'a' * 24, 'channel_id': 'c' * 16}, UnitsTest.text)
-        self.assertEqual([e['sentences'] for e in entries], [3, 2, 2])
-        self.assertEqual(quote['total'], 3)
+        self.assertEqual([e['sentences'] for e in entries], [5, 2])
+        self.assertEqual([e['ends_paragraph'] for e in entries], [True, True])
+        self.assertEqual(quote['total'], 2)
 
     def test_sentences_voiced_one_by_one_before_are_not_sent_again(self):
         ref = {'sha256': 'ref'}

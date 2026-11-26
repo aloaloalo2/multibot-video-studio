@@ -19,6 +19,9 @@ class NarrationEndingTest(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
         self.root=Path(self.temp.name)
         data=patch.object(store,'DATA_ROOT',self.root/'data');data.start();self.addCleanup(data.stop)
+        # these tests check the silence step itself at the old fixed values; test_narration_silence checks the spans
+        for name,value in (('LEAD',(0.,0.)),('ENDING',(1.5,1.5))):
+            fixed=patch.object(ending,name,value);fixed.start();self.addCleanup(fixed.stop)
         self.source=self.root/'original.wav'
         self.samples=array.array('h',(round(10000*math.sin(2*math.pi*330*i/48000)) for i in range(48000)))
         with wave.open(str(self.source),'wb') as wav:

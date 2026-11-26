@@ -294,6 +294,15 @@ class HeyGenFramesTest(unittest.TestCase):
         self.assertEqual(heygen_frames.host_zoom(plan, frames[4])[1], 7.5)    # five seconds: 1.5 points less
         self.assertEqual(heygen_frames.host_zoom(plan, frames[5])[1], 15.0)   # long: 15% stays
 
+    def test_the_films_last_host_frame_ends_after_his_last_word(self):
+        plan = {'frames': [{'number': 1, 'format': 'host', 'start': 0, 'end': 5, 'sentence_timings': [{'start': 0, 'end': 4.8}]},
+                           {'number': 2, 'format': 'host', 'start': 5, 'end': 12, 'sentence_timings': [{'start': 5, 'end': 10.2}]}]}
+        last = heygen_frames.spoken(plan, plan['frames'][1])
+        self.assertEqual((last['end'], last['frame_end'], last['closing']), (10.7, 12, True))   # the 1.3 s of silence are not sent
+        self.assertIs(heygen_frames.spoken(plan, plan['frames'][0]), plan['frames'][0])          # not the last frame
+        short = {**plan['frames'][1], 'end': 10.9}
+        self.assertIs(heygen_frames.spoken({'frames': [plan['frames'][0], short]}, short), short)   # no real silence to cut
+
     def test_host_zoom_order_is_the_films_own(self):
         import host_from_voice
         orders = {seed: host_from_voice.host_directions(seed, 12) for seed in ('a' * 24, 'b' * 24, 'c' * 24, 'd' * 24)}

@@ -2148,6 +2148,19 @@ class Handler(BaseHTTPRequestHandler):
         draft = re.fullmatch(r'/api/projects/([0-9a-f]{24})/script-draft(/restore)?', path)
         if draft and method == ('POST' if draft.group(2) else 'PATCH'):
             return self.json_response(script_drafts.restore(draft.group(1), body) if draft.group(2) else script_drafts.save(draft.group(1), body))
+        # the channel's signature closing, written once by the frame agent of its first film that ends on the host and kept
+        # for the channel's next films (user, 26 November 2026: «щоб в канала була своя особливість… не як шаблон»)
+        match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/closing-signature", path)
+        if match and method in ("GET", "POST"):
+            cid = store.load_project(match.group(1))["channel_id"]
+            current = str(store.read_channel_settings(store.get_channel_folder(cid), {}).get("closing_signature") or "")
+            if method == "POST" and not current:
+                text = " ".join(str((body or {}).get("text") or "").split())[:600]
+                if len(text) < 20:
+                    raise store.StudioError("Опишіть фірмову кінцівку каналу одним-двома реченнями", 400)
+                store.update_channel_settings(cid, {"closing_signature": text})
+                current = text
+            return self.json_response({"signature": current})
         # the music or SFX row's volume set on a film, kept as the channel's default for its next films (26 November 2026)
         match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/sound-level", path)
         if match and method == "POST":

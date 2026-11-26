@@ -491,6 +491,8 @@ class Context:
         self.unified_font = fonts.get("unified") is True
         self.text_font = project.get("font_family") or fonts.get("font_family") or "Golos"
         self.accent_font = project.get("font_family") or fonts.get("accent_font_family") or fonts.get("font_family") or "Montserrat"
+        # the channel's own fonts an agent may name for a piece of text: the main, the second and the extra one
+        self.channel_fonts = {f for f in (fonts.get("font_family"), fonts.get("second_font_family"), fonts.get("extra_font_family")) if f}
 
     @cached_property
     def accent_look(self) -> dict:
@@ -739,7 +741,7 @@ def _accent_text(ctx: Context, frame, picture, spec, start, duration, mid, index
     if style not in STYLES:
         raise OpError("Стиль підпису: plain, card, tag, yellow або white")
     color, card, shadow = STYLES[style]
-    requested_font = None if getattr(ctx, "unified_font", False) else spec.get("font_family")
+    requested_font = spec.get("font_family") if not getattr(ctx, "unified_font", False) or spec.get("font_family") in getattr(ctx, "channel_fonts", set()) else None
     family = requested_font or getattr(ctx, "accent_font", None) or ctx.project.get("font_family") or "Montserrat"
     weight = int(spec.get("font_weight", 700))
     centre = _point(ctx, picture, spec, "at", mid)
@@ -840,8 +842,13 @@ def place(ctx: Context, spec: dict) -> None:
     fps = int(ctx.project.get("fps") or 25)
     first, last = (math.floor(float(planned[key]) * fps + .5 + 1e-8) for key in ("start", "end"))   # render.frame_index
     start, end = first / fps, last / fps
+    # `until`: the picture ends before the frame does and the frame's black ground shows the rest (the film's last host
+    # frame ends with the host's last word; the closing silence is the frame agent's graphic on black, 26 November 2026)
+    clip_end = end
+    if isinstance(spec.get("until"), (int, float)) and not isinstance(spec.get("until"), bool):
+        clip_end = min(end, max(start + 1 / fps, math.floor(float(spec["until"]) * fps + .5 + 1e-8) / fps))
     first_action = len(ctx.actions)
-    payload = {"layer_id": ctx.project["tracks"][0]["id"], "start": start, "duration": end - start,
+    payload = {"layer_id": ctx.project["tracks"][0]["id"], "start": start, "duration": clip_end - start,
                "title": FRAME_CLIP.format(number)}
     if spec.get("text"):
         # the words to read on screen (user, 25 November 2026: «вставки текстові мають бути вже адаптовані… числа або
@@ -873,11 +880,11 @@ def place(ctx: Context, spec: dict) -> None:
             source = Path(asset["path"]) if asset.get("path") else Path(spec["path"]).expanduser()
             length = store.media_duration(source) if source.is_file() else None
             trim = float(spec.get("trim_start") or 0)
-            if length and length - trim < end - start - 1 / fps:
+            if length and length - trim < clip_end - start - 1 / fps:
                 raise OpError(f"Відео кадру {number} триває {length - trim:.1f} с, а кадр {end - start:.1f} с: візьміть довше відео")
             if trim:
                 payload["trim_start"] = trim
-        length = math.floor((end - start) * 1000) / 1000
+        length = math.floor((clip_end - start) * 1000) / 1000
         aspect = _aspect(asset.get("path") or spec.get("path")) if kind == "image" else None
         vertical = aspect is not None and aspect < 1.6      # 3:4 and 4:3 sit in the frame with fields beside them
         # a wide photo fills the frame before it drifts, whether narrower or wider than the frame (a 1.85 picture in a

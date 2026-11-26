@@ -176,6 +176,14 @@ def spec(project, text):
         return {'text':part,'key':key,'sentences':count,'cached':(root(project['id'])/(key+'.mp3')).is_file(), 'raw_cached':lab.original_path(params,ref).is_file() or (settings['provider']=='elevenlabs' and (root(project['id'])/(lab.fingerprint({**params,'speed':1.},ref)+'.mp3')).is_file())}
     # takes voiced before, by sentence or in other groups, are used again (reusing_units)
     entries=[entry(part['text'],part['sentences']) for part in parts]
+    # which parts end a paragraph: the silence after them may be longer (narration_ending.silence_plan)
+    lines=[' '.join(line.split()) for line in text.splitlines() if line.strip()]
+    at=0
+    for item in entries:
+        said=' '.join(item['text'].split())
+        while at<len(lines) and said not in lines[at]:at+=1
+        item['ends_paragraph']=at<len(lines) and lines[at].endswith(said)
+        if item['ends_paragraph']:at+=1
     missing={x['key']:x for x in entries if not x['cached'] and not x['raw_cached']}.values()
     count=sum(len(x['text']) for x in missing)
     amount=sum(lab.estimate({**settings,'text':x['text']})['amount'] for x in missing)
@@ -246,7 +254,9 @@ def change_speed(pid, speed, reverb=None, room_noise=None):
         output=folder/f'Озвучка-{round(speed*100)}.mp3'
         output.write_bytes(lab.paced_audio(baseline,speed/base_speed))
         if not (store.media_duration(output) or 0)>0:raise store.StudioError('Не вдалося змінити темп')
-        updated=narration_ending.import_audio(project,output,'narration',reverb=effect,room_noise=noise) if narration_effects.identity(effect,noise) else narration_ending.import_audio(project,output,'narration')
+        rows=store.read_json(folder/'phrases.json',[]) or []
+        breaks=narration_ending.breaks_of([folder/(x['key']+'.mp3') for x in rows],rows) if rows and all('ends_paragraph' in x and (folder/(x['key']+'.mp3')).is_file() for x in rows) else []   # older takes: no new pauses
+        updated=narration_ending.import_audio(project,output,'narration',reverb=effect,room_noise=noise,breaks=breaks) if narration_effects.identity(effect,noise) else narration_ending.import_audio(project,output,'narration',breaks=breaks)
         with store.LOCK:
             project=store.load_project(pid)
             for track in project.get('tracks',[]):
@@ -471,9 +481,10 @@ def run(project,text,settings,ref,entries,job):
             import narration_effects
             effect = narration_effects.normalize(settings.get('reverb'))
             noise = narration_effects.noise_options(settings.get('room_noise'))
-            asset=narration_ending.import_audio(store.load_project(pid),target,'narration',reverb=effect,room_noise=noise) if narration_effects.identity(effect,noise) else narration_ending.import_audio(store.load_project(pid),target,'narration')
+            breaks=narration_ending.breaks_of([folder/(x['key']+'.mp3') for x in entries],entries)
+            asset=narration_ending.import_audio(store.load_project(pid),target,'narration',reverb=effect,room_noise=noise,breaks=breaks) if narration_effects.identity(effect,noise) else narration_ending.import_audio(store.load_project(pid),target,'narration',breaks=breaks)
             store.atomic_json(folder/'phrases.json',entries)
-            job.update(status='done',asset_id=asset['id'],duration=asset.get('duration'),reverb=effect,room_noise=noise,audio_processing_version=narration_effects.VERSION,ending_seconds=narration_ending.SECONDS,finished_at=time.time())
+            job.update(status='done',asset_id=asset['id'],duration=asset.get('duration'),reverb=effect,room_noise=noise,audio_processing_version=narration_effects.VERSION,ending_seconds=(asset.get('narration_ending') or {}).get('seconds',narration_ending.SECONDS),finished_at=time.time())
     except Cancelled:job.update(status='cancelled',finished_at=time.time())
     except Exception as error:
         if (folder is not None and (folder/'cancel').exists()):job.update(status='cancelled',finished_at=time.time())

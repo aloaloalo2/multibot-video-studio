@@ -389,6 +389,11 @@ def validate_settings(value: dict) -> dict:
         if 'accent_font_family' in value['typography']:
             try:graphics.validate({'font_family':value['typography']['accent_font_family']})
             except (ValueError,TypeError) as error:raise StudioError(str(error)) from None
+        # the channel's second and extra fonts, to combine with the main one (user, 26 November 2026); empty: none
+        for key in ('second_font_family','extra_font_family'):
+            if value['typography'].get(key):
+                try:graphics.validate({'font_family':value['typography'][key]})
+                except (ValueError,TypeError) as error:raise StudioError(str(error)) from None
         try:graphics.validate(value['typography'])
         except (ValueError,TypeError) as error:raise StudioError(str(error))
     if not isinstance(value.get("generated_image_style", ""), str) or len(value.get("generated_image_style", "")) > 4000:

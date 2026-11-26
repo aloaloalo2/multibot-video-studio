@@ -338,6 +338,9 @@ def _main(argv=None) -> int:
     numbers.add_argument("project")
     numbers.add_argument("file", nargs="?", help="JSON {фраза озвучки: текст студії}; без нього тільки список")
     numbers.add_argument("--dry-run", action="store_true")
+    closing = commands.add_parser("closing", help="фірмова кінцівка каналу: показати або записати (перший раз)")
+    closing.add_argument("project")
+    closing.add_argument("text", nargs="?", help="опис фірмової кінцівки каналу, до 600 знаків")
     ops = commands.add_parser("ops", help="операції з JSON-файлу або stdin")
     ops.add_argument("project")
     ops.add_argument("file")
@@ -408,6 +411,10 @@ def _main(argv=None) -> int:
             if not data["ok"]:
                 return 1
             print(f"Перевірка пройшла: {data['frames']} кадрів" if args.dry_run else f"План кадрів записано в студію: {data['frames']} кадрів")
+            return 0
+        if args.command == "closing":
+            data = call("POST", f"/api/projects/{pid}/closing-signature", {"text": args.text}) if args.text else call("GET", f"/api/projects/{pid}/closing-signature")
+            print(data.get("signature") or "Фірмової кінцівки каналу ще немає.")
             return 0
         if args.command == "numbers":
             if not args.file:

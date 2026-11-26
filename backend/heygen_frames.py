@@ -128,6 +128,23 @@ def make(pid, request):
         _make(pid, request)
 
 
+CLOSING_TAIL = .5   # seconds of the host after his last word (room for a blur into black), then the black ground and the graphic
+
+
+def spoken(plan, frame):
+    """The film's last frame, when it is the host's, ends for HeyGen just after his last word: the closing silence is never
+    sent (a silent host only fidgets, and the seconds are paid), the frame's black ground and the frame agent's graphic
+    show it instead (user, 26 November 2026: «він договорив, і сразу… чорний фон… і сразу там інфографіка»)."""
+    frames = (plan or {}).get('frames') or []
+    timings = frame.get('sentence_timings') or []
+    if not frames or frame['number'] != frames[-1]['number'] or not timings:
+        return frame
+    said = max(float(t.get('end') or 0) for t in timings if isinstance(t, dict)) + CLOSING_TAIL
+    if float(frame['end']) - said < .4:
+        return frame
+    return {**frame, 'end': round(said, 3), 'frame_end': frame['end'], 'closing': True}
+
+
 def _make(pid, request):
     project = store.load_project(pid)
     plan = store.load_project_plan(pid)
@@ -135,7 +152,7 @@ def _make(pid, request):
         host_from_voice.place(pid)
         return
     made = set(store.made_frames(project, plan))
-    frames = [f for f in plan['frames'] if f.get('format') == 'host' and f['number'] <= request['frames'] and f['number'] not in made]
+    frames = [spoken(plan, f) for f in plan['frames'] if f.get('format') == 'host' and f['number'] <= request['frames'] and f['number'] not in made]
     if not frames:
         return
     validate(project, plan)
@@ -559,7 +576,8 @@ def _place(pid, request, job):
         store.atomic_json(receipt, record)
     move, percent = host_zoom(store.load_project_plan(pid), frame, pid)
     montage_ops.run(pid, [{'op': 'place', 'frame': frame['number'], 'asset_id': asset['id'], 'trim_start': float(record.get('head') or 0),
-                           'motion': move, 'zoom_percent': percent, 'zoom_base': host_from_voice.host_base(pid, store.load_project_plan(pid), frame['number'])}])
+                           'motion': move, 'zoom_percent': percent, 'zoom_base': host_from_voice.host_base(pid, store.load_project_plan(pid), frame['number']),
+                           **({'until': frame['end']} if frame.get('closing') else {})}])
 
 
 def zoom_percent(seconds):

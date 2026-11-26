@@ -25,11 +25,17 @@ def setUpModule():
     import planner
     setUpModule.previous = planner.DIGITS_AFTER_WHISPER
     planner.DIGITS_AFTER_WHISPER = True
+    # the timings here assume the old fixed silence: none before, 1.5 s after (narration_ending spans pinned)
+    import narration_ending
+    setUpModule.silence = (narration_ending.LEAD, narration_ending.ENDING)
+    narration_ending.LEAD, narration_ending.ENDING = (0., 0.), (1.5, 1.5)
 
 
 def tearDownModule():
     import planner
+    import narration_ending
     planner.DIGITS_AFTER_WHISPER = setUpModule.previous
+    narration_ending.LEAD, narration_ending.ENDING = setUpModule.silence
 
 class DirectWorkflowTest(unittest.TestCase):
     def setUp(self):

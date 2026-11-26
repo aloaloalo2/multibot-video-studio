@@ -97,6 +97,10 @@ def rules(project, *, production=False, planning=False):
         blocks.append('Шрифти текстових вставок та окремих монтажних елементів Studio: основний текст '+fonts['font_family']+
                       ', акценти й підписи '+fonts.get('accent_font_family',fonts['font_family'])+
                       '. Шрифти сцен Razgon визначає animation.title_font.')
+        extra=[f for f in (fonts.get('second_font_family'),fonts.get('extra_font_family')) if f and f!=fonts['font_family']]
+        if extra:
+            blocks.append('Інші шрифти каналу для комбінацій у моушн-дизайні, підписах і текстових вставках: '+', '.join(extra)+
+                          ' (передавай font_family). Поєднуй їх з основним для ієрархії, наприклад заголовок і підпис, не більше двох шрифтів в одному кадрі.')
     return ('\nЧинні загальні та канальні правила для режисури й монтажу. '
             'Сценарій та озвучка вже прийняті. Поточний запит, налаштування каналу і наведений нижче '
             'порядок Studio мають пріоритет над історичними кроками випуску.\n' + '\n\n'.join(blocks) + '\n')

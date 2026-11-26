@@ -75,7 +75,7 @@ def place(ctx, spec: dict) -> None:
         store.validated_keyframes(part.get('keyframes', []), length)
         if content == 'text':
             default_font = getattr(ctx, 'accent_font' if part.get('text_role') in ('accent', 'label') else 'text_font', None)
-            if default_font and (getattr(ctx, 'unified_font', False) or not part.get('font_family')):
+            if default_font and (not part.get('font_family') or getattr(ctx, 'unified_font', False) and part.get('font_family') not in getattr(ctx, 'channel_fonts', set())):
                 part['font_family'] = default_font
             validate_label(part, ctx.project, number, fps)
         prepared.append(part)

@@ -554,6 +554,9 @@ class BackendTest(unittest.TestCase):
             store.generate_project_plan(cid, episode.name, str(episode), script=script)
 
     def test_background_speech_analysis_applies_only_complete_matches(self):
+        import narration_ending   # the old fixed silence: none before, 1.5 s after
+        for name, value in (("LEAD", (0., 0.)), ("ENDING", (1.5, 1.5))):
+            pinned = patch.object(narration_ending, name, value); pinned.start(); self.addCleanup(pinned.stop)
         cid = store.channel_id(self.channel)
         project = store.create_project(cid, "Speech analysis")
         pid = project["id"]

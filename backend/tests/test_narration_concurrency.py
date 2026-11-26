@@ -26,7 +26,8 @@ class NarrationConcurrencyTests(unittest.TestCase):
         self.workers = []
         self.release = threading.Event()
         duration = store.media_duration
-        patches = [patch.object(store, 'DATA_ROOT', self.root),
+        patches = [patch.object(lab, 'sentences_per_request', return_value=1),   # a take a line: the order of takes is what is tested
+                   patch.object(store, 'DATA_ROOT', self.root),
                    patch.object(store, 'project_dir', side_effect=self.project_dir),
                    patch.object(store, 'load_project', side_effect=lambda pid: self.projects[pid]),
                    patch.object(store, 'get_channel_folder', return_value=self.root),
