@@ -417,7 +417,7 @@ button.danger:hover:not(:disabled){background:#523034}
 .field-row input[type=range]{width:100%;accent-color:var(--ui-accent)}
 .inspector-actions{display:flex;justify-content:space-between;gap:5px;margin-top:20px}
 .timeline-panel{flex:none;margin:0 10px;height:clamp(212px,calc(28vh + 32px),312px);min-height:212px;display:flex;flex-direction:column}
-.timeline-toolbar{border-bottom:1px solid #303034;display:flex;flex-wrap:nowrap;align-items:center;gap:6px;padding:5px 10px;min-height:36px;position:relative;z-index:55}
+.timeline-toolbar{border-bottom:0;display:flex;flex-wrap:nowrap;align-items:center;gap:6px;padding:5px 10px;min-height:36px;position:relative;z-index:55}
 .timeline-toolbar h2{margin-right:6px}
 .timeline-toolbar button{padding:4px 7px;font-size:11px}
 .timeline-spacer{flex:1}
