@@ -1436,16 +1436,37 @@ def studio_frames(args) -> None:
                 subprocess.run(command, cwd=razgon.parents[1], check=True, stdout=subprocess.DEVNULL)
                 return part
             try:
-                head = living("head", max(0, first - round(lead * fps)), first) if lead else None
-                tail = living("tailpart", last, last + frames_after)
+                # the head and the tail are drawn side by side, each by its own short render (two Chromium starts one
+                # after the other were most of a held copy's time)
+                with concurrent.futures.ThreadPoolExecutor(2) as pair:
+                    head = pair.submit(living, "head", max(0, first - round(lead * fps)), first) if lead else None
+                    tail = pair.submit(living, "tailpart", last, last + frames_after)
+                    head, tail = head.result() if head else None, tail.result()
                 parts = [p for p in (head, clip, tail) if p]
                 listing = clip.with_name(f"{clip.stem}_parts.txt")
                 listing.write_text("".join(f"file '{p.as_posix()}'\n" for p in parts))
                 drawn = (video_frame_count(head) if head else 0) + video_frame_count(clip) + (video_frame_count(tail) if tail else 0)
                 pad = max(0.0, (round(lead * fps) + (last - first) + frames_after - drawn) / fps)   # past the film's end only
-                subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(listing),
-                                *(["-vf", f"tpad=stop_mode=clone:stop_duration={pad:.3f}"] if pad > 1e-6 else []),
-                                *encoder, "-pix_fmt", "yuv420p", "-an", str(held)], check=True)
+                joined = False
+                if pad <= 1e-6:
+                    # the parts come from the same renderer and encoder: joined as they are, without encoding the whole
+                    # frame again (about 0.05 s instead of seconds; user, 26 November 2026: «роби все можливе щоб
+                    # експорт був швидким»); a join that does not hold every frame is encoded as before
+                    trial = held.with_name(held.stem + ".join.mp4")
+                    try:
+                        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(listing),
+                                        "-c", "copy", "-an", "-movflags", "+faststart", str(trial)], check=True, capture_output=True)
+                        joined = video_frame_count(trial) == drawn
+                        if joined:
+                            trial.replace(held)
+                    except (subprocess.CalledProcessError, OSError, ValueError):
+                        joined = False
+                    finally:
+                        trial.unlink(missing_ok=True)
+                if not joined:
+                    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(listing),
+                                    *(["-vf", f"tpad=stop_mode=clone:stop_duration={pad:.3f}"] if pad > 1e-6 else []),
+                                    *encoder, "-pix_fmt", "yuv420p", "-an", str(held)], check=True)
             except Exception as error:   # noqa: BLE001
                 # a renderer that cannot draw past the edge: the old held picture rather than no export at all
                 sys.stderr.write(f"Кадр {frame['number']}: живий хвіст не вийшов ({describe(error)}), тримаю останній кадр\n")

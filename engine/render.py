@@ -1659,8 +1659,81 @@ def timeline_scene(start: float, end: float, active: list[dict], work: Path, wid
     return scene
 
 
+AUDIO_RATE = 48000
+BED_SHORT = 30.0      # a clip this short (a sound effect) is summed into one bed instead of being its own FFmpeg input
+BED_HEADROOM = 16.0   # the bed is kept this much quieter in its 32-bit FLAC, so effects that overlap never clip it
+BED_BLOCK = 10 * AUDIO_RATE
+
+
+def _decoded(source: str):
+    import numpy as np
+    raw = subprocess.run([FFMPEG, "-nostdin", "-v", "error", "-i", source, "-vn", "-f", "f32le", "-ac", "2", "-ar", str(AUDIO_RATE), "-"],
+                         capture_output=True, timeout=300)
+    if raw.returncode:
+        raise RuntimeError("cannot decode audio: " + Path(source).name)
+    return np.frombuffer(raw.stdout, dtype="<f4").reshape(-1, 2)
+
+
+def audio_bed(tracks: list[dict], total: float, work: Path) -> list[dict]:
+    """The short clips of the mix (sound effects) summed into one stereo file, block by block, each source decoded once,
+    and the tracks with that file in their place. Andromeda had about 330 effects: each was an FFmpeg input delayed with
+    silence to its place and padded to the whole 24 minutes, and the mix took 4.4 of the export's 11 minutes (user, 26
+    November 2026: «роби все можливе щоб експорт був швидким»). The samples are the clip's trim, length, volume and
+    start at 48 kHz, as FFmpeg mixed them (the start now to the sample, not to the millisecond)."""
+    try:
+        import numpy as np
+    except ImportError:
+        return tracks
+    def short(track):
+        if track.get("loop") or float(track["duration"]) > BED_SHORT:
+            return False
+        length = media_duration(Path(track["source"]))
+        return bool(length) and length <= 2 * BED_SHORT
+    bed_tracks = [t for t in tracks if short(t)]
+    if len(bed_tracks) < 4:
+        return tracks
+    decoded = {source: _decoded(source) for source in dict.fromkeys(str(t["source"]) for t in bed_tracks)}
+    end = round(total * AUDIO_RATE)
+    parts = []
+    for track in bed_tracks:
+        trim, length = round(float(track["trim_start"]) * AUDIO_RATE), round(float(track["duration"]) * AUDIO_RATE)
+        segment = decoded[str(track["source"])][trim:trim + length]
+        start = round(float(track["start"]) * AUDIO_RATE)
+        if len(segment) and start < end:
+            parts.append((start, start + len(segment), segment, float(track["volume"])))
+    parts.sort(key=lambda p: p[0])
+    bed = work / "sfx-bed.flac"
+    encoder = subprocess.Popen([FFMPEG, "-v", "error", "-nostdin", "-y", "-f", "f32le", "-ar", str(AUDIO_RATE), "-ac", "2", "-i", "-",
+                                "-c:a", "flac", "-sample_fmt", "s32", "-compression_level", "0", str(bed)],
+                               stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        first = 0
+        for begin in range(0, end, BED_BLOCK):
+            stop = min(end, begin + BED_BLOCK)
+            block = np.zeros((stop - begin, 2), np.float32)
+            while first < len(parts) and parts[first][1] <= begin:
+                first += 1
+            for a, b, segment, volume in parts[first:]:
+                if a >= stop:
+                    break
+                lo, hi = max(a, begin), min(b, stop)
+                if lo < hi:
+                    block[lo - begin:hi - begin] += segment[lo - a:hi - a] * volume
+            encoder.stdin.write((block / BED_HEADROOM).tobytes())
+        _, error = encoder.communicate(timeout=900)
+        if encoder.returncode:
+            raise RuntimeError("cannot write the effects bed: " + error.decode(errors="replace")[-300:])
+    finally:
+        if encoder.poll() is None:
+            encoder.kill()
+            encoder.communicate()
+    kept = [t for t in tracks if t not in bed_tracks]
+    return kept + [{"source": str(bed), "start": 0.0, "trim_start": 0.0, "duration": total, "volume": BED_HEADROOM, "loop": False}]
+
+
 def compose_timeline(segments: list[Path], tracks: list[dict], output: Path, work: Path, total: float) -> None:
-    """Concatenation keeps the input count small even for a long timeline."""
+    """Concatenation keeps the input count small even for a long timeline; the short sounds go in as one bed."""
+    tracks = audio_bed(tracks, total, work)
     listing = work / "segments.txt"
     listing.write_text("".join("file '" + str(path).replace("'", "'\\''") + "'\n" for path in segments), encoding="utf-8")
     joined = work / "joined.mp4"

@@ -319,3 +319,40 @@ class LongGraphTest(unittest.TestCase):
             render.run_ffmpeg([render.FFMPEG, "-v", "error", "-y", "-f", "lavfi", "-i", "color=black:s=64x64:d=0.2",
                                "-filter_complex", graph, "-map", "[v]", str(out)], "scene", index=1)
             self.assertTrue(out.is_file())
+
+
+class AudioBedTest(unittest.TestCase):
+    """Short sounds summed into one bed mix the same as each as its own FFmpeg input (26 November 2026)."""
+
+    def test_bed_mix_matches_the_input_per_sound_mix(self):
+        import subprocess, tempfile
+        from unittest.mock import patch
+        import numpy as np
+        sys.path.insert(0, str(ENGINE.parent))
+        import render
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            video = work / "v.mp4"
+            subprocess.run([render.FFMPEG, "-v", "error", "-y", "-f", "lavfi", "-i", "color=black:s=64x36:r=25:d=6",
+                            "-c:v", "libx264", "-pix_fmt", "yuv420p", str(video)], check=True)
+            voice = work / "voice.wav"
+            subprocess.run([render.FFMPEG, "-v", "error", "-y", "-f", "lavfi", "-i", "sine=f=220:d=6", "-ac", "2", "-ar", "48000", str(voice)], check=True)
+            tracks = [{"source": str(voice), "start": 0.0, "trim_start": 0.0, "duration": 6.0, "volume": 1.0}]
+            for n in range(6):
+                beep = work / f"b{n}.wav"
+                subprocess.run([render.FFMPEG, "-v", "error", "-y", "-f", "lavfi", "-i", f"sine=f={500 + 120 * n}:d=1.5", "-ac", "2", "-ar", "48000", str(beep)], check=True)
+                tracks.append({"source": str(beep), "start": 0.5 + 0.8 * n, "trim_start": 0.2, "duration": 0.9, "volume": 0.07})
+            outs = {}
+            for name, bed in (("old", False), ("new", True)):
+                folder = work / name
+                folder.mkdir()
+                with patch.object(render, "audio_bed", render.audio_bed if bed else (lambda t, total, w: t)):
+                    render.compose_timeline([video], [dict(t) for t in tracks], folder / "out.mp4", folder, 6.0)
+                raw = subprocess.run([render.FFMPEG, "-v", "error", "-i", str(folder / "out.mp4"), "-f", "f32le", "-ac", "2", "-ar", "48000", "-"],
+                                     capture_output=True, check=True).stdout
+                outs[name] = np.frombuffer(raw, dtype="<f4")
+            self.assertTrue((work / "new" / "sfx-bed.flac").is_file())
+            n = min(len(outs["old"]), len(outs["new"]))
+            self.assertGreater(n, 48000 * 5 * 2)
+            # AAC of nearly the same samples (the start rounded to the sample instead of the millisecond)
+            self.assertLess(float(np.sqrt(np.mean((outs["old"][:n] - outs["new"][:n]) ** 2))), 0.01)
