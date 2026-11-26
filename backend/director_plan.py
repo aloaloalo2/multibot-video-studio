@@ -131,7 +131,7 @@ def sentences(pid: str) -> dict:
             "opening": [{"number": number, "format": kind} for number, kind in enumerate(rules, 1) if kind] or None,
             # the last frames counted from the end: 1 is the film's last frame
             "closing": [{"from_end": len(ending) - index, "format": kind} for index, kind in enumerate(ending) if kind] or None,
-            "host_rules": {"first_frame": bool(rules) and rules[0] == "host", "last_frame": True, "no_consecutive": True,
+            "host_rules": {"first_frame": bool(rules) and rules[0] == "host", "last_frame": not (ending or [None])[-1], "no_consecutive": True,
                            "even_distribution": True} if settings.get("host_even_distribution") else None}
 
 
@@ -198,7 +198,9 @@ def apply(pid: str, frames, dry_run: bool = False) -> dict:
         hosts = [i for i, kind in enumerate(kinds) if kind == "host"]
         if any(b == a + 1 for a, b in zip(hosts, hosts[1:])):
             problems.append("Ведучий не може бути у двох кадрах поспіль")
-        if kinds and kinds[-1] != "host":
+        # the channel's own «Кінець ролика» names the last frame's format and wins over this general rule (user, 26 November
+        # 2026: Астрофізика UA closes on Razgon; the director stopped between the two rules)
+        if kinds and kinds[-1] != "host" and not (closing(settings) or [None])[-1]:
             problems.append("Останній кадр ролику має бути з ведучим")
         if hosts:
             starts = [times[i][0] for i in hosts]

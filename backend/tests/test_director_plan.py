@@ -55,6 +55,19 @@ class DirectorPlanTest(unittest.TestCase):
             good = director_plan.apply(PROJECT["id"], frames(([1, 2], "stock_photo"), ([3, 4], "text"), ([5, 6], "stock_photo"), ([7, 8], "text")), dry_run=True)
             self.assertFalse([p for p in good.get("problems", []) if "за кінцем ролика" in p])
 
+    def test_the_channels_closing_wins_over_the_host_last_rule(self):
+        # Астрофізика UA closes on another format; the director stopped between the two rules (26 November 2026)
+        settings = {**CHANNEL["settings"], "weights": {"host": 50, "stock_photo": 50}}
+        hosts_last = {**CHANNEL, "settings": settings}
+        photo_last = {**CHANNEL, "settings": {**settings, "closing_sequence": ["auto", "auto", "stock_photo"]}}
+        plan = frames(([1, 2], "host"), ([3, 4], "stock_photo"), ([5, 6], "host"), ([7, 8], "stock_photo"))
+        with patch.object(store, "list_channels", return_value=[hosts_last]):
+            self.assertTrue(any("Останній кадр ролику має бути з ведучим" in p for p in director_plan.apply(PROJECT["id"], plan, dry_run=True)["problems"]))
+            self.assertTrue(director_plan.sentences(PROJECT["id"])["host_rules"]["last_frame"])
+        with patch.object(store, "list_channels", return_value=[photo_last]):
+            self.assertFalse(any("Останній кадр ролику має бути з ведучим" in p for p in director_plan.apply(PROJECT["id"], plan, dry_run=True)["problems"]))
+            self.assertFalse(director_plan.sentences(PROJECT["id"])["host_rules"]["last_frame"])
+
     def test_a_plan_needs_the_voice(self):
         self.plan = None
         with self.assertRaises(store.StudioError):
