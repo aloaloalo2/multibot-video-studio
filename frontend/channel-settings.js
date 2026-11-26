@@ -75,7 +75,7 @@ function organizeChannelSettings(channel){
     ['look','Оформлення','Стиль і плашка'],
     ['voice','Озвучка','Голос і зразок'],
     ['thumbnails','Прев’ю','Герой і побажання'],
-    ['sound','SFX','Музика й ефекти','Додаткове'],
+    ['sound','Музика і звуки','Музика, SFX і переходи','Додаткове'],
     ['languages','Переклад','Голоси інших мов'],
     ['advanced','Розширене','Формат відео й правила','Розширене'],
     // what the channel's paid services cost, today and this month, deleted projects included (user, 25 November 2026:
