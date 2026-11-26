@@ -260,8 +260,9 @@ class StarredStylesTest(unittest.TestCase):
         with patch.object(director, 'channel_settings', return_value={'animation': {'style': 'dusk', 'styles': ['neon', 'golden']}}):
             text = director.animation_style(project)
         self.assertIn('prepare --style <id>', text)
-        for sid in ('dusk', 'neon', 'golden'):
+        for sid in ('neon', 'golden'):
             self.assertIn(f'- {sid}:', text)
+        self.assertNotIn('- dusk:', text)   # only the starred styles are the channel's choice (26 November 2026)
         self.assertNotIn('без підміни через --style', text)
         with patch.object(director, 'channel_settings', return_value={'animation': {'style': 'dusk'}}):
             self.assertIn('без підміни через --style', director.animation_style(project))

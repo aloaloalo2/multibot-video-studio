@@ -454,5 +454,11 @@ function bindBranding(channel){
   return ()=>({display_name:displayName(),channel_kind:kind(),
     thumbnail_logo:{enabled:$('thumbnail-logo-enabled').checked,position:$('thumbnail-logo-position').value,size:Number($('thumbnail-logo-size').value)},
     logo:{enabled:$('logo-enabled').checked,position:logo.position,size:Number($('logo-size').value),margin:Math.min(15,Math.round(Number($('logo-margin').value)/MARGIN_PX*1000)/1000),opacity:Number($('logo-opacity').value),version},
-    animation:{...animation,...(chosen?{style:chosen}:{}),styles:[...starred].filter(id=>!styles||styles.some(style=>style.id===id)),...textStyle(),allow_stickmen:$('style-stickmen').checked}});
+    animation:(()=>{
+      // the stars choose the channel's styles (user, 26 November 2026: «рамка… не потрібна, тому що ми зірочками все
+      // відмітили»): the default style is one of them, the card in the preview when it is starred, else the first starred
+      const picked=[...starred].filter(id=>!styles||styles.some(style=>style.id===id));
+      const main=picked.length?(picked.includes(chosen)?chosen:picked[0]):chosen;
+      return {...animation,...(main?{style:main}:{}),styles:picked,...textStyle(),allow_stickmen:$('style-stickmen').checked};
+    })()});
 }

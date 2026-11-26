@@ -810,7 +810,7 @@ button.danger:hover:not(:disabled){background:#523034}
 .style-thumb{display:flex;flex-direction:column;gap:5px;padding:0;border:0;background:none;color:#aeb0b7;font-size:11px;text-align:center;cursor:pointer}
 .style-thumb img{width:100%;aspect-ratio:16/9;object-fit:cover;display:block;border-radius:9.5px;border:2px solid transparent;transition:border-color .15s,transform .15s}
 .style-thumb[aria-checked="true"]{color:#f1f1f2}
-.style-thumb[aria-checked="true"] img{border-color:var(--ui-accent)}
+.style-thumb[aria-checked="true"] img{border-color:transparent}   /* the stars choose the styles: no frame for the one in the preview (user, 26 November 2026) */
 .style-thumb:focus-visible{outline:none}.style-thumb:focus-visible img{outline:2px solid var(--ui-accent);outline-offset:2px}
 @media(hover:hover){.style-thumb:hover img{transform:scale(1.04)}.style-thumb:not([aria-checked="true"]):hover img{border-color:#5a5a62}}
 .style-toolbar{align-items:center;margin:12px 0 0}

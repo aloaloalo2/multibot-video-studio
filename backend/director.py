@@ -227,7 +227,8 @@ def animation_style(project: dict) -> str:
         return own or next((s for s in presets if s['id'] == style_id), {})
     style = describe(sid)
     starred = [x for x in dict.fromkeys(animation.get('styles') or []) if isinstance(x, str)]
-    pool = list(dict.fromkeys([sid, *starred])) if starred else []
+    # the starred styles are the channel's styles; without stars, its one saved style
+    pool = starred if starred else []
     selected = {**{k: v for k, v in animation.items() if k != 'styles'}, 'style': sid}
     text = ("\nЗбережений стиль Razgon цього каналу: " + json.dumps(selected, ensure_ascii=False) +
             ("\nОпис вигляду: " + style['desc'] if style.get('desc') else ''))
