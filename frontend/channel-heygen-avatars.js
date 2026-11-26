@@ -45,6 +45,25 @@ function channelHeyGenAvatars(channel){
     return cover;
   }
 
+  function showLarge(look){
+    const dialog=document.createElement('dialog'), close=document.createElement('button'), photo=document.createElement('img'), name=document.createElement('p');
+    dialog.className='heygen-avatar-large';
+    close.type='button';close.className='heygen-avatar-large-close';close.setAttribute('aria-label','Закрити');
+    close.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>';
+    photo.alt=look.name||'';photo.decoding='async';photo.referrerPolicy='no-referrer';photo.src=look.preview_image_url;
+    name.textContent=look.name||'';
+    const wait=document.createElement('span');
+    wait.className='export-spinner heygen-avatar-large-wait';wait.setAttribute('aria-hidden','true');
+    dialog.classList.add('is-loading');
+    photo.addEventListener('load',()=>dialog.classList.remove('is-loading'),{once:true});
+    photo.addEventListener('error',()=>{dialog.classList.remove('is-loading');name.textContent='HeyGen не віддав це фото.';},{once:true});
+    dialog.append(close,wait,photo,name);
+    close.addEventListener('click',()=>dialog.close());
+    dialog.addEventListener('click',event=>{if(event.target===dialog)dialog.close();});
+    dialog.addEventListener('close',()=>dialog.remove(),{once:true});
+    document.body.append(dialog);dialog.showModal();
+  }
+
   function showSelection(){
     // the picture beside «HeyGen» already shows the chosen avatar (user, 25 November 2026: «Мій аватар… прибери»)
     summary.textContent=selected?'':'Мій аватар не вибрано';summary.hidden=!!selected;
@@ -152,6 +171,8 @@ function channelHeyGenAvatars(channel){
       group.className='heygen-avatar-details';
       group.name='heygen-avatar-groups';
       portrait(title,avatar);group.append(title);
+      // an open avatar's name is an outlined pill: a click closes it and shows every avatar (user, 26 November 2026)
+      group.addEventListener('toggle',()=>{title.title=group.open?'Вибрати інший аватар':'';});
       if(avatar.id===selected?.id&&avatar.preview_image_url&&!preview){
         preview=avatar.preview_image_url;
         showSelection();
@@ -161,10 +182,19 @@ function channelHeyGenAvatars(channel){
         empty:'Для цього аватара HeyGen не повернув образів.',
         onFirstPage:()=>{if(group.open)revealGallery();},
         row:look=>{
-          const button=document.createElement('button');
+          const card=document.createElement('div'), button=document.createElement('button'), zoom=document.createElement('button');
+          card.className='heygen-avatar-look-card';
           button.type='button';button.className='heygen-avatar-look';
           const cover=portrait(button,look);
           cover.insertAdjacentHTML('beforeend','<span class="heygen-avatar-look-action" aria-hidden="true">Вибрати</span><span class="heygen-avatar-look-star" aria-hidden="true">★</span>');
+          // a magnifier in the picture's top left corner shows the look large (user, 26 November 2026: «лупу… щоб я
+          // нажав на неї і міг приблизити глянути на картинку»); it sits beside the choose button, not inside it
+          zoom.type='button';zoom.className='heygen-avatar-zoom';
+          zoom.title='Переглянути більше';zoom.setAttribute('aria-label',`Переглянути «${look.name||'образ'}» більше`);
+          zoom.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5 5M10.5 8v5M8 10.5h5"/></svg>';
+          zoom.hidden=!look.preview_image_url;
+          zoom.addEventListener('click',()=>showLarge(look));
+          card.append(button,zoom);
           button.setAttribute('aria-pressed',String(selected?.id===avatar.id&&selected.look?.id===look.id));
           button.addEventListener('click',()=>{
             groups.querySelector('.heygen-avatar-look[aria-pressed=true]')?.setAttribute('aria-pressed','false');
@@ -173,7 +203,7 @@ function channelHeyGenAvatars(channel){
             selected={...avatarIdentity(avatar),look:avatarIdentity(look)};
             showSelection();updateField(true);
           });
-          return button;
+          return card;
         }
       });
       group.addEventListener('toggle',()=>{

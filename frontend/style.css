@@ -3502,3 +3502,25 @@ select option{background:#232327;color:#f1f1f2}
 /* the channel's three fonts in one column of the same pickers (26 November 2026) */
 .channel-look .channel-typeface{margin-bottom:6px}
 .channel-look .channel-typeface>span:first-child{min-width:132px}
+
+/* HeyGen looks: a magnifier shows a look large; the open avatar's name is an outlined pill that goes back to all avatars (26 November 2026) */
+.heygen-avatar-look-card{position:relative;min-width:0}
+.heygen-avatar-look-card>.heygen-avatar-look{width:100%}
+.heygen-avatar-zoom{position:absolute;top:14px;left:14px;display:grid;place-items:center;width:28px;height:28px;padding:0;border:0;border-radius:50%;background:#222226e6;color:#e6e7eb;cursor:zoom-in;opacity:.85;transition:opacity .15s,background .15s}
+.heygen-avatar-zoom[hidden]{display:none}
+.heygen-avatar-zoom svg{width:16px;height:16px}
+.heygen-avatar-zoom:hover,.heygen-avatar-zoom:focus-visible{opacity:1;background:#34343a;outline:none}
+.heygen-avatar-details[open]>summary{width:fit-content;margin:14px 20px 12px;padding:4px 16px 4px 4px;gap:10px;border:1px solid #ffffff26;border-radius:999px}
+.heygen-avatar-details[open]>summary::after{content:'';width:6px;height:6px;flex:none;margin-left:2px;border:solid #a3a7b2;border-width:0 1px 1px 0;transform:translateY(-2px) rotate(45deg)}
+.heygen-avatar-details[open]>summary:hover{border-color:#ffffff40;background:#ffffff0a}
+.heygen-avatar-large{max-width:min(92vw,1400px);max-height:92vh;padding:0;border:0;border-radius:12px;background:#101013;color:#e6e7eb;overflow:hidden}
+.heygen-avatar-large::backdrop{background:#000000c4}
+.heygen-avatar-large img{display:block;max-width:min(92vw,1400px);max-height:calc(92vh - 42px);object-fit:contain}
+.heygen-avatar-large p{margin:0;padding:11px 16px;font-size:13px;color:#b5b8c1}
+.heygen-avatar-large-close{position:absolute;top:10px;right:10px;display:grid;place-items:center;width:32px;height:32px;padding:0;border:0;border-radius:50%;background:#222226d9;color:#f4f4f6;cursor:pointer}
+.heygen-avatar-large-close svg{width:16px;height:16px}
+.heygen-avatar-large-close:focus-visible{outline:none;background:#3a3a40}
+.heygen-avatar-large-wait{display:none}
+.heygen-avatar-large.is-loading{width:min(92vw,960px);aspect-ratio:16/9}
+.heygen-avatar-large.is-loading .heygen-avatar-large-wait{display:block;position:absolute;top:50%;left:50%;translate:-50% -50%}
+.heygen-avatar-large.is-loading img{visibility:hidden}
