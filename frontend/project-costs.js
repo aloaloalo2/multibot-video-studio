@@ -48,7 +48,8 @@ function updateLanguageCostBadge(id){
     if(state.project?.id!==owner)return;
     const eleven=data.providers?.elevenlabs;
     const amount=(data.languages_usd||0)+(eleven?.usd||0)+(data.providers?.fishaudio?.usd||0)+(data.providers?.heygen?.usd||0);
-    badge.textContent=`${eleven?.requests?'≈ ':''}${projectCostMoney(amount)}`;
+    // nothing spent shows nothing (user, 26 November 2026: «якщо 0 доларів… суму… взагалі не показує»)
+    badge.textContent=amount>=.005?`${eleven?.requests?'≈ ':''}${projectCostMoney(amount)}`:'';
     badge.title='Переклади й оцінка вартості озвучення ElevenLabs, Fish Audio та HeyGen';
   }).catch(()=>{if(state.project?.id===owner)badge.textContent='';});
 }
