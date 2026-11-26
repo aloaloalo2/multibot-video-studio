@@ -180,7 +180,6 @@ function organizeChannelSettings(channel){
   formatsGroup.after(openingGroup);
   const closingGroup=move('.settings-closing','projects',{fold:true,icon:'closing'});
   openingGroup.after(closingGroup);
-  move('.settings-sentences','advanced',{fold:true,icon:'sentences'});
   move('.settings-script-wishes','wishes',{fold:true,icon:'script',title:'Сценаристу'});
   move('.settings-thumbnail-wishes','wishes',{fold:true,icon:'thumbnails',title:'До прев’ю'});
   move('.settings-agent-memory','wishes',{fold:true,icon:'memory',title:'До плану кадрів і монтажу'});
@@ -335,7 +334,6 @@ function organizeChannelSettings(channel){
     text(summaries.get('.settings-output'),`${value('settings-video-size').replace('x',' × ')} · ${value('settings-video-fps')} кадрів/с · ${selected('settings-video-quality')}`);
     text(summaries.get('.settings-closing'),[1,2,3].every(n=>value(`settings-close-${n}`)==='auto')?'Авто':[1,2,3].map(n=>selected(`settings-close-${n}`)).join(' · '));
     text(summaries.get('.settings-opening'),[1,2,3].every(n=>value(`settings-open-${n}`)==='auto')?'Авто':[1,2,3].map(n=>selected(`settings-open-${n}`)).join(' · '));
-    text(summaries.get('.settings-sentences'),`Коротке речення до ${value('settings-short')} слів`);
     // a filled wish shows a grey check by its title (user, 15 November 2026: «якщо є побажання то галочка нада сіра»)
     for(const [selector,id] of [['.settings-script-wishes','settings-script-wishes'],['.settings-thumbnail-wishes','settings-thumbnail-wishes'],
       ['.settings-image-wishes','settings-generated-image-style'],['.settings-agent-memory','channel-agent-memory']]){
