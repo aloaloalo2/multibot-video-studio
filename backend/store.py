@@ -427,6 +427,10 @@ def validate_settings(value: dict) -> dict:
     if (not isinstance(sequence, list) or not 1 <= len(sequence) <= 3
             or any(not isinstance(item, str) or item not in allowed | {"auto", "video"} for item in sequence)):
         raise StudioError("Невірний початок ролика: до трьох кадрів, кожен «Авто» або формат каналу")
+    closing = value.get("closing_sequence", ["auto"])
+    if (not isinstance(closing, list) or not 1 <= len(closing) <= 3
+            or any(not isinstance(item, str) or item not in allowed | {"auto", "video"} for item in closing)):
+        raise StudioError("Невірний кінець ролика: до трьох кадрів, кожен «Авто» або формат каналу")
     for key, lo, hi in (("first_clip_seconds", 0, 60), ("words_per_minute", 1, 1000)):
         if key in value and (type(value[key]) not in (int, float) or not math.isfinite(value[key]) or not lo <= value[key] <= hi):
             raise StudioError("Невірне значення: " + key)

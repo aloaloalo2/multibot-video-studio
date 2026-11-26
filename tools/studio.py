@@ -388,6 +388,9 @@ def _main(argv=None) -> int:
                 opening = [{"number": n, "format": opening["format"]} for n in range(1, int(opening["count"]) + 1)]
             if opening:
                 print("Початок ролика за налаштуваннями каналу: " + ", ".join(f"кадр {item['number']} — {item['format']}" for item in opening))
+            if data.get("closing"):
+                print("Кінець ролика за налаштуваннями каналу: " + ", ".join(
+                    ("останній кадр" if item["from_end"] == 1 else f"{item['from_end']}-й з кінця") + f" — {item['format']}" for item in data["closing"]))
             if data.get('host_rules'):
                 first = 'перший і останній кадри' if data['host_rules'].get('first_frame', True) else 'останній кадр'
                 print(f'HeyGen відео: {first}, не два підряд, рівномірно протягом ролика; переважно короткі завершені фрази.')

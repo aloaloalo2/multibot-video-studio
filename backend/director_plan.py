@@ -93,6 +93,19 @@ def opening(settings: dict) -> list:
     return result
 
 
+def closing(settings: dict) -> list:
+    """The format each of the film's last frames must have, the last one last; None leaves that frame to the director.
+    «Кінець ролика» names up to three frames, as «Початок ролика» does (user, 26 November 2026: «є початок ролика, а ще
+    хочу кінець ролика»)."""
+    sequence = settings.get("closing_sequence")
+    if not (isinstance(sequence, list) and any(item != "auto" for item in sequence)):
+        return []
+    result = [None if item == "auto" else _video(settings, item) for item in sequence[-OPENING_FRAMES:]]
+    while result and result[0] is None:
+        result.pop(0)
+    return result
+
+
 def voice(plan: dict) -> tuple[list[str], list[dict]]:
     return ([text for frame in plan["frames"] for text in frame["sentences"]],
             [item for frame in plan["frames"] for item in frame["sentence_timings"]])
@@ -104,6 +117,7 @@ def sentences(pid: str) -> dict:
     plan, settings = synced_plan(pid), channel_settings(project)
     texts, timings = voice(plan)
     rules = opening(settings)
+    ending = closing(settings)
     targets = shares(settings)
     return {"sentences": [{"number": number, "text": text, "start": timing["start"], "end": timing["end"]}
                           for number, (text, timing) in enumerate(zip(texts, timings), 1)],
@@ -115,6 +129,8 @@ def sentences(pid: str) -> dict:
             "tolerance": SHARE_TOLERANCE,
             "auto_formats": settings.get('weights_auto', []),
             "opening": [{"number": number, "format": kind} for number, kind in enumerate(rules, 1) if kind] or None,
+            # the last frames counted from the end: 1 is the film's last frame
+            "closing": [{"from_end": len(ending) - index, "format": kind} for index, kind in enumerate(ending) if kind] or None,
             "host_rules": {"first_frame": bool(rules) and rules[0] == "host", "last_frame": True, "no_consecutive": True,
                            "even_distribution": True} if settings.get("host_even_distribution") else None}
 
@@ -158,6 +174,11 @@ def apply(pid: str, frames, dry_run: bool = False) -> dict:
     for number, (wanted, kind) in enumerate(zip(opening(settings), kinds), 1):
         if wanted and kind != wanted:
             problems.append(f"Кадр {number} за початком ролика в налаштуваннях каналу має бути «{labels.get(wanted, wanted)}»")
+    ending = closing(settings)
+    for offset, wanted in enumerate(ending):
+        index = len(kinds) - len(ending) + offset
+        if wanted and 0 <= index < len(kinds) and kinds[index] != wanted:
+            problems.append(f"Кадр {index + 1} за кінцем ролика в налаштуваннях каналу має бути «{labels.get(wanted, wanted)}»")
     run = 1
     for index in range(1, len(kinds)):
         run = run + 1 if kinds[index] == kinds[index - 1] else 1

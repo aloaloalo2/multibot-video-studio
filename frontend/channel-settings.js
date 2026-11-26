@@ -14,6 +14,7 @@ const channelSettingsPaths={
   formats:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
   accents:'<path d="m4 20 10-10 3 3L7 23ZM12 12l3 3M5 3v4M3 5h4m12-6v4m-2-2h4m-1 10v4m-2-2h4"/>',
   opening:'<path d="m9 7 8 5-8 5Z"/><rect x="3" y="3" width="18" height="18" rx="3"/>',
+  closing:'<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 8v8m6-8v8"/>',
   sentences:'<path d="M5 5h14M5 10h14M5 15h8M5 20h10"/>',
   memory:'<path d="M8 4h8v3h3v10h-3v3H8v-3H5V7h3Zm1 6h6v4H9ZM3 10h2m-2 4h2m14-4h2m-2 4h2"/>',
   output:'<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4m-3-10 2 2 4-4"/>',
@@ -174,6 +175,8 @@ function organizeChannelSettings(channel){
   move('.settings-output','advanced',{fold:true,icon:'output'});
   const openingGroup=move('.settings-opening','projects',{fold:true,icon:'opening'});
   formatsGroup.after(openingGroup);
+  const closingGroup=move('.settings-closing','projects',{fold:true,icon:'closing'});
+  openingGroup.after(closingGroup);
   move('.settings-sentences','advanced',{fold:true,icon:'sentences'});
   move('.settings-script-wishes','wishes',{fold:true,icon:'script',title:'Сценаристу'});
   move('.settings-thumbnail-wishes','wishes',{fold:true,icon:'thumbnails',title:'До прев’ю'});
@@ -313,6 +316,7 @@ function organizeChannelSettings(channel){
     const wishes=body.querySelector('.generated-image-preferences')?.closest('.channel-settings-group');if(wishes)wishes.hidden=!(Number(body.querySelector('[data-weight=generated_photo]')?.value)>0||body.querySelector('[data-weight-auto=generated_photo]')?.getAttribute('aria-pressed')==='true');
     text(summaries.get('.channel-project-defaults'),`${selected('settings-plan-mode')} · ${selected('settings-director-model')} · ${selected('settings-claude-effort')}`);
     text(summaries.get('.settings-output'),`${value('settings-video-size').replace('x',' × ')} · ${value('settings-video-fps')} кадрів/с · ${selected('settings-video-quality')}`);
+    text(summaries.get('.settings-closing'),[1,2,3].every(n=>value(`settings-close-${n}`)==='auto')?'Авто':[1,2,3].map(n=>selected(`settings-close-${n}`)).join(' · '));
     text(summaries.get('.settings-opening'),[1,2,3].every(n=>value(`settings-open-${n}`)==='auto')?'Авто':[1,2,3].map(n=>selected(`settings-open-${n}`)).join(' · '));
     text(summaries.get('.settings-sentences'),`Коротке речення до ${value('settings-short')} слів`);
     // a filled wish shows a grey check by its title (user, 15 November 2026: «якщо є побажання то галочка нада сіра»)

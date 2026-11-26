@@ -45,6 +45,16 @@ class DirectorPlanTest(unittest.TestCase):
             result=director_plan.apply(PROJECT["id"],frames(([1,2],"host"),([3,4],"host"),([5,6],"stock_photo"),([7,8],"stock_photo")),dry_run=True)
             self.assertTrue(any("двох кадрах поспіль" in x for x in result["problems"]))
 
+    def test_the_closing_frames_are_checked_and_shown_to_the_director(self):
+        # «Кінець ролика» (user, 26 November 2026): the last frame must be a text frame
+        channel = {**CHANNEL, "settings": {**CHANNEL["settings"], "closing_sequence": ["auto", "auto", "text"]}}
+        with patch.object(store, "list_channels", return_value=[channel]):
+            self.assertEqual(director_plan.sentences(PROJECT["id"])["closing"], [{"from_end": 1, "format": "text"}])
+            bad = director_plan.apply(PROJECT["id"], frames(([1, 2], "text"), ([3, 4], "stock_photo"), ([5, 6], "text"), ([7, 8], "stock_photo")), dry_run=True)
+            self.assertTrue(any("за кінцем ролика" in p for p in bad["problems"]))
+            good = director_plan.apply(PROJECT["id"], frames(([1, 2], "stock_photo"), ([3, 4], "text"), ([5, 6], "stock_photo"), ([7, 8], "text")), dry_run=True)
+            self.assertFalse([p for p in good.get("problems", []) if "за кінцем ролика" in p])
+
     def test_a_plan_needs_the_voice(self):
         self.plan = None
         with self.assertRaises(store.StudioError):
@@ -133,3 +143,16 @@ class ContinuousSceneTest(unittest.TestCase):
             self.assertTrue(director_plan.CONTINUES.match(idea), idea)
         for idea in ("Камера відходить від двох скупчень", "Нова сцена: телескоп Евклід", "Самі галактики"):
             self.assertFalse(director_plan.CONTINUES.match(idea), idea)
+
+
+class ClosingSequenceTest(unittest.TestCase):
+    """«Кінець ролика»: the formats of the last frames, the last one last (user, 26 November 2026)."""
+
+    def test_the_last_frames_follow_the_channel(self):
+        import director_plan
+        plain = {"weights": {"stock_photo": 60, "text": 40}}
+        self.assertEqual(director_plan.closing(plain), [])
+        self.assertEqual(director_plan.closing({**plain, "closing_sequence": ["auto", "auto", "auto"]}), [])
+        self.assertEqual(director_plan.closing({**plain, "closing_sequence": ["auto", "auto", "text"]}), ["text"])
+        self.assertEqual(director_plan.closing({**plain, "closing_sequence": ["text", "auto", "stock_photo"]}), ["text", None, "stock_photo"])
+
