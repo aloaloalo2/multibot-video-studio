@@ -116,14 +116,14 @@ function bindChannelSound(saved){
     const paint=(item,playing)=>{item.play.innerHTML=playing?PAUSE:PLAY;item.play.classList.toggle('playing',playing);item.play.setAttribute('aria-pressed',String(playing));
       item.time.textContent=playing||item.audio.currentTime>0?`${clock(item.audio.currentTime)} / ${clock(item.seconds)}`:clock(item.seconds);
       if(!item.seeking)item.seek.value=String(item.audio.currentTime||0);};
-    const dropTrack=()=>{if(!track)return;track.audio.pause();track.audio.removeAttribute('src');track.audio.load();track.play.innerHTML=PLAY;track.play.classList.remove('playing');track.play.setAttribute('aria-pressed','false');track.time.textContent=clock(track.seconds);track.audio.remove();track.seek.remove();track=null;};
+    const dropTrack=()=>{if(!track)return;track.audio.pause();track.audio.removeAttribute('src');track.audio.load();track.play.innerHTML=PLAY;track.play.classList.remove('playing');track.play.setAttribute('aria-pressed','false');track.time.textContent=clock(track.seconds);track.audio.remove();track.seek.remove();track.play.parentElement.classList.remove('active');track=null;};
     async function toggleTrack(row,play,time){
       if(track?.id===row.id){if(track.audio.paused){stop();try{await track.audio.play();}catch{status('Не вдалося прослухати трек.',true);}}else track.audio.pause();return;}
       dropTrack();stop();
       const audio=new Audio(row.preview_url);audio.volume=.5;audio.preload='auto';audio.hidden=true;play.parentElement.append(audio);   // in the dialog, so closing it pauses the track
       // a seek bar under the playing track, to hear its middle or end (user, 26 November 2026: «додай перемотку… музика довга»)
       const seek=document.createElement('input');seek.type='range';seek.className='music-seek';seek.min='0';seek.max=String(row.seconds||0);seek.step='0.1';seek.value='0';seek.setAttribute('aria-label',`Перемотати: ${row.title}`);
-      play.parentElement.append(seek);
+      play.parentElement.append(seek);play.parentElement.classList.add('active');   // the chosen track stays lit, playing or paused
       const item={id:row.id,audio,play,time,seek,seconds:row.seconds,seeking:false};track=item;
       audio.addEventListener('loadedmetadata',()=>{if(Number.isFinite(audio.duration))seek.max=String(audio.duration);});
       seek.addEventListener('input',()=>{item.seeking=true;time.textContent=`${clock(seek.value)} / ${clock(item.seconds)}`;});

@@ -3475,3 +3475,6 @@ select option{background:#232327;color:#f1f1f2}
 .music-seek::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;margin-top:-4px;border-radius:50%;background:#cfd1d7}
 .music-seek::-moz-range-track{height:3px;border-radius:2px;background:#45464e}
 .music-seek::-moz-range-thumb{width:11px;height:11px;border:0;border-radius:50%;background:#cfd1d7}
+.music-seek{flex:0 0 auto!important;width:calc(100% - 44px)!important;min-width:0!important;box-sizing:border-box;margin:0 12px 6px 32px!important;height:12px;padding:0!important}
+.music-track.active{background:#ffffff0a}
+.music-track.active .music-track-time{color:#d5d8df}
