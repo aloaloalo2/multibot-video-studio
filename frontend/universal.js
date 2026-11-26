@@ -50,8 +50,9 @@ function addLayerVolumeControl(heading,targets,label){
     // precise at the low levels music and SFX live at (user, 26 November 2026: «там 5%, воно дуже маленьке… точність
     // дуже важко виставити»): − and + by one point, the number typed in, and a slider on a square-root scale, so 0-20%
     // takes almost half of it
-    const toPos=v=>Math.round(Math.sqrt(Math.max(0,Math.min(200,v))/200)*1000),toLevel=p=>Math.round(200*(p/1000)**2);
-    pop.innerHTML=`<div class="layer-volume-head"><span>Гучність</span><div class="layer-volume-number"><button type="button" class="layer-volume-step" data-step="-1" aria-label="Тихіше на 1%">−</button><input type="number" min="0" max="200" step="1" value="${level}" aria-label="Гучність доріжки ${esc(label)}, відсотків"><span>%</span><button type="button" class="layer-volume-step" data-step="1" aria-label="Гучніше на 1%">+</button></div></div><input type="range" min="0" max="1000" step="1" value="${toPos(level)}" aria-label="Гучність доріжки ${esc(label)}"><div class="layer-volume-presets">${[2,5,10,20,50,100].map(v=>`<button type="button" data-level="${v}">${v}</button>`).join('')}</div>`;
+    const MAX=120;   // 120% is enough (user, 26 November 2026: «до 120 вистачить»)
+    const toPos=v=>Math.round(Math.sqrt(Math.max(0,Math.min(MAX,v))/MAX)*1000),toLevel=p=>Math.round(MAX*(p/1000)**2);
+    pop.innerHTML=`<div class="layer-volume-head"><span>Гучність</span><div class="layer-volume-number"><button type="button" class="layer-volume-step" data-step="-1" aria-label="Тихіше на 1%">−</button><input type="number" min="0" max="120" step="1" value="${level}" aria-label="Гучність доріжки ${esc(label)}, відсотків"><span>%</span><button type="button" class="layer-volume-step" data-step="1" aria-label="Гучніше на 1%">+</button></div></div><input type="range" min="0" max="1000" step="1" value="${toPos(level)}" aria-label="Гучність доріжки ${esc(label)}"><div class="layer-volume-presets">${[2,5,10,20,50,100].map(v=>`<button type="button" data-level="${v}">${v}</button>`).join('')}</div>`;
     const range=pop.querySelector('input[type=range]'),number=pop.querySelector('input[type=number]');
     let current=level,timer=null;
     const save=()=>{clearTimeout(timer);timer=setTimeout(()=>{
@@ -59,7 +60,7 @@ function addLayerVolumeControl(heading,targets,label){
       (edits.length===1?action(edits[0].type,edits[0].payload,'Гучність змінено.'):action('batch',{actions:edits},'Гучність доріжки змінено.')).catch(()=>{});
     },350);};
     const set=(value,{fromRange=false,commit=true}={})=>{
-      current=Math.max(0,Math.min(200,Math.round(Number(value)||0)));
+      current=Math.max(0,Math.min(MAX,Math.round(Number(value)||0)));
       number.value=String(current);if(!fromRange)range.value=String(toPos(current));
       pop.querySelectorAll('[data-level]').forEach(b=>b.classList.toggle('active',Number(b.dataset.level)===current));
       if(commit)save();
