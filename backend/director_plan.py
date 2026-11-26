@@ -17,6 +17,19 @@ import planner
 import store
 
 SHARE_TOLERANCE = 5.0   # percentage points between a format's share of the film and the channel's share
+HOST_GOOD_WORDS = 10      # a host frame on the script's times: about this many words (frame 20 of Астрофізика UA)
+HOST_MAX_WORDS = 23       # and never more (frame 11)
+HOST_MAX_SECONDS = 3.0    # a host frame on the voice's own times (Avatar III repeats itself in a longer take)
+HOST_SECONDS_SLACK = .5   # «орієнтовно до 3 секунд»
+
+
+def avatar_iv_first(project: dict) -> bool:
+    """The channel makes its first host frame with Avatar IV, which the author is happy with at any length."""
+    try:
+        import heygen_frames
+        return bool(heygen_frames.first_frame_settings(project).get('enabled'))
+    except Exception:   # noqa: BLE001 — no HeyGen settings: no exception for the first frame
+        return False
 RUN_LIMIT = 5
 # what each format shows, for the director choosing one for a line of the voice
 HINTS = {"stock_video": "реальне відео зі стоків: люди, побут, природа, рух",
@@ -132,6 +145,8 @@ def sentences(pid: str) -> dict:
             # the last frames counted from the end: 1 is the film's last frame
             "closing": [{"from_end": len(ending) - index, "format": kind} for index, kind in enumerate(ending) if kind] or None,
             "host_rules": {"first_frame": bool(rules) and rules[0] == "host", "last_frame": not (ending or [None])[-1], "no_consecutive": True,
+                           "good_words": HOST_GOOD_WORDS, "max_words": HOST_MAX_WORDS, "max_seconds": HOST_MAX_SECONDS,
+                           "avatar_iv_first": avatar_iv_first(project), "share_is_ceiling": True,
                            "even_distribution": True} if settings.get("host_even_distribution") else None}
 
 
@@ -194,6 +209,24 @@ def apply(pid: str, frames, dry_run: bool = False) -> dict:
     seconds = {key: 0.0 for key in targets}
     for kind, (start, end) in zip(kinds, times):
         seconds[kind] += end - start
+    # a host frame is short, a phrase or two (user, 26 November 2026: frame 20 of Астрофізика UA, 10 words in 4.1 s, is the
+    # kind; frame 11, 23 words, the most; frame 63, 28 words in 11.9 s, too long: a long take shows HeyGen's avatar
+    # repeating itself). On times estimated from the script it is counted in words; on the voice's own times, in seconds.
+    # The first frame, when the channel makes it with Avatar IV, is free of this.
+    if "host" in targets:
+        estimated = (plan.get("timing") or {}).get("status") == "script_estimate"
+        free = next((i for i, kind in enumerate(kinds) if kind == "host"), None) if avatar_iv_first(project) else None
+        for i, kind in enumerate(kinds):
+            if kind != "host" or i == free:
+                continue
+            words = sum(len(texts[n - 1].split()) for n in groups[i])
+            length = times[i][1] - times[i][0]
+            if estimated and words > HOST_MAX_WORDS:
+                problems.append(f"Кадр {i + 1} (ведучий): {words} слів, а ведучому до {HOST_MAX_WORDS}, найкраще близько "
+                                f"{HOST_GOOD_WORDS}. Дай ведучому коротшу фразу, а довге речення іншому формату")
+            elif not estimated and length > HOST_MAX_SECONDS + HOST_SECONDS_SLACK:
+                problems.append(f"Кадр {i + 1} (ведучий): {length:.1f} с, а ведучого показуй до {HOST_MAX_SECONDS:g} с. "
+                                f"Дай ведучому коротку фразу, а довгу іншому формату")
     if settings.get("host_even_distribution") and "host" in targets:
         hosts = [i for i, kind in enumerate(kinds) if kind == "host"]
         if any(b == a + 1 for a, b in zip(hosts, hosts[1:])):
@@ -211,6 +244,10 @@ def apply(pid: str, frames, dry_run: bool = False) -> dict:
     covered = sum(seconds.values()) or 1
     actual = {key: round(100 * value / covered, 1) for key, value in seconds.items()}
     for key, target in targets.items():
+        # the host's share is a ceiling: with few short phrases in the voice there are fewer host frames, and that is
+        # right (user, 26 November 2026: «якщо не буде там тих 15%, ну нічого страшного»)
+        if key == "host" and actual[key] < target:
+            continue
         if key not in settings.get('weights_auto', []) and abs(actual[key] - target) > SHARE_TOLERANCE:
             problems.append(f"«{labels[key]}»: {actual[key]:.1f}% тривалості замість {target:.1f}% (допуск ±{SHARE_TOLERANCE:g})")
     result = {"ok": not problems, "problems": problems, "frames": len(groups), "shares": actual, "targets": targets,

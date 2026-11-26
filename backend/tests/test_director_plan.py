@@ -68,6 +68,26 @@ class DirectorPlanTest(unittest.TestCase):
             self.assertFalse(any("Останній кадр ролику має бути з ведучим" in p for p in director_plan.apply(PROJECT["id"], plan, dry_run=True)["problems"]))
             self.assertFalse(director_plan.sentences(PROJECT["id"])["host_rules"]["last_frame"])
 
+    def test_a_host_frame_is_short(self):
+        # user, 26 November 2026: about ten words, at most 23 on the script's times; up to 3 s on the voice's times
+        channel = {**CHANNEL, "settings": {**CHANNEL["settings"], "weights": {"host": 60, "stock_photo": 40}, "weights_auto": ["stock_photo"]}}
+        long_host = frames(([1, 2], "host"), ([3, 4, 5], "stock_photo"), ([6], "host"), ([7, 8], "stock_photo"))
+        short_host = frames(([1], "host"), ([2, 3, 4, 5], "stock_photo"), ([6], "host"), ([7], "stock_photo"), ([8], "host"))
+        with patch.object(store, "list_channels", return_value=[channel]), patch.object(director_plan, "avatar_iv_first", return_value=False):
+            seconds = lambda result: [p for p in result.get("problems", []) if "ведучого показуй до" in p]
+            self.assertTrue(seconds(director_plan.apply(PROJECT["id"], long_host, dry_run=True)))    # 4 s
+            self.assertFalse(seconds(director_plan.apply(PROJECT["id"], short_host, dry_run=True)))  # 2 s
+            # few short phrases, less host than the channel's share: the share is only a ceiling
+            self.assertFalse([p for p in director_plan.apply(PROJECT["id"], short_host, dry_run=True).get("problems", []) if "Ведучий" in p and "%" in p])
+            self.plan["timing"]["status"] = "script_estimate"
+            words = lambda result: [p for p in result.get("problems", []) if "слів, а ведучому до" in p]
+            self.assertTrue(words(director_plan.apply(PROJECT["id"], frames(([1, 2, 3], "host"), ([4, 5], "stock_photo"), ([6], "host"), ([7, 8], "stock_photo")), dry_run=True)))  # 27 words
+            self.assertFalse(words(director_plan.apply(PROJECT["id"], long_host, dry_run=True)))   # 18 words
+        with patch.object(store, "list_channels", return_value=[channel]), patch.object(director_plan, "avatar_iv_first", return_value=True):
+            self.plan["timing"]["status"] = "audio_synced"
+            first_free = director_plan.apply(PROJECT["id"], long_host, dry_run=True)
+            self.assertFalse([p for p in first_free.get("problems", []) if p.startswith("Кадр 1 (ведучий)")])   # Avatar IV
+
     def test_a_plan_needs_the_voice(self):
         self.plan = None
         with self.assertRaises(store.StudioError):
