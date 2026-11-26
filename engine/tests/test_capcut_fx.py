@@ -116,3 +116,22 @@ class PreviewTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RecentRendersStayTest(unittest.TestCase):
+    """The cache limit never removes a render of the last hours: an export lost its own first seams (26 November 2026)."""
+
+    def test_limit_keeps_recent_renders(self):
+        import os, tempfile, time
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            old, fresh, keep = folder / 'old.mov', folder / 'fresh.mov', folder / 'keep.mov'
+            for item in (old, fresh, keep):
+                item.write_bytes(b'x' * 1000)
+            os.utime(old, (time.time() - 5 * 3600,) * 2)
+            with patch.object(capcut_fx, 'cache_dir', lambda: folder), patch.object(capcut_fx, 'CACHE_LIMIT', 1500):
+                capcut_fx._limit_cache(keep)
+            self.assertFalse(old.exists())
+            self.assertTrue(fresh.exists())
+            self.assertTrue(keep.exists())

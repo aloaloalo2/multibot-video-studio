@@ -26,6 +26,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 ENGINE = Path(__file__).resolve().parent
@@ -250,13 +251,20 @@ def _used(path: Path) -> None:
 # day of edits they took 27 GB and filled the Mac (25 November 2026). The least recently used go first.
 # 1.5 GB: the studio's Mac had a few GB free and a 6 GB cache filled its disk (25 November 2026)
 CACHE_LIMIT = int(1.5 * 1024 ** 3)
+# what was drawn or used in the last hours stays, whatever the limit: an export drew its 36 seams (1.5 GB of ProRes) and
+# the limit removed the first of them before the GPU read them, «scene 38 layer 5 not found» (26 November 2026); the
+# studio's tidy (storage_tidy.capcut) trims the cache later
+RECENT = 3 * 3600
 
 
 def _limit_cache(keep: Path) -> None:
     try:
+        now = time.time()
         entries = [p for p in cache_dir().iterdir() if p.is_file() and p.suffix in (".mov", ".mp4", ".raw", ".none") and p != keep]   # effect previews (webm) stay
         entries.sort(key=lambda p: p.stat().st_mtime)
-        total = sum(p.stat().st_size for p in entries) + (keep.stat().st_size if keep.exists() else 0)
+        recent = [p for p in entries if now - p.stat().st_mtime < RECENT]
+        entries = [p for p in entries if now - p.stat().st_mtime >= RECENT]
+        total = sum(p.stat().st_size for p in entries + recent) + (keep.stat().st_size if keep.exists() else 0)
         for item in entries:
             if total <= CACHE_LIMIT:
                 break
