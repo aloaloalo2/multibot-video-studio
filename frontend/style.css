@@ -3487,3 +3487,15 @@ select option{background:#232327;color:#f1f1f2}
 .timeline-toolbar .claude-ask-button svg,.claude-ask-button svg,.claude-ask-button svg path{width:13px;height:13px;fill:#8d909a;transition:fill .15s}
 .timeline-toolbar .claude-ask-button:hover:not(:disabled),.claude-ask-button:hover{background:#ffffff0d;border:0;box-shadow:none}
 .claude-ask-button:hover svg,.claude-ask-button:hover svg path{fill:#d97757}
+/* the layer volume: − and + by one point, the number, a square-root slider and a few steps (26 November 2026) */
+.layer-volume-pop{width:236px;padding:12px}
+.layer-volume-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.layer-volume-number{display:flex;align-items:center;gap:4px;color:#d6d7dc}
+.layer-volume-number input{width:44px;height:26px;padding:0 4px;border:1px solid #3a3a40;border-radius:6px;background:#141417;color:#ffcf59;font-size:13px;text-align:center;font-variant-numeric:tabular-nums;-moz-appearance:textfield}
+.layer-volume-number input::-webkit-outer-spin-button,.layer-volume-number input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.layer-volume-step{width:26px;height:26px;padding:0;border:0;border-radius:6px;background:#2a2a30;color:#d6d7dc;font-size:15px;line-height:26px;cursor:pointer}
+.layer-volume-step:hover{background:#34343b}
+.layer-volume-presets{display:flex;gap:4px;margin-top:8px}
+.layer-volume-presets button{flex:1;height:22px;padding:0;border:0;border-radius:5px;background:#26262b;color:#9a9ca4;font-size:11px;cursor:pointer;font-variant-numeric:tabular-nums}
+.layer-volume-presets button:hover{background:#303036;color:#e3e5eb}
+.layer-volume-presets button.active{background:#3a3424;color:#ffcf59}

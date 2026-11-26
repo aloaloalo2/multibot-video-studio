@@ -47,16 +47,33 @@ function addLayerVolumeControl(heading,targets,label){
     event.stopPropagation();
     document.querySelector('.layer-volume-pop')?.remove();
     const pop=document.createElement('div');pop.className='layer-volume-pop';pop.setAttribute('role','dialog');pop.setAttribute('aria-label','Гучність доріжки '+label);
-    pop.innerHTML=`<label><span>Гучність</span><output>${level}%</output></label><input type="range" min="0" max="200" step="1" value="${level}" aria-label="Гучність доріжки ${esc(label)}">`;
-    const range=pop.querySelector('input'),out=pop.querySelector('output');
-    range.addEventListener('input',()=>{out.textContent=range.value+'%';});
-    range.addEventListener('change',()=>{
-      const volume=Number(range.value)/100,edits=clips.map(c=>({type:'set_clip_volume',payload:{clip_id:c.id,volume}}));
+    // precise at the low levels music and SFX live at (user, 26 November 2026: «там 5%, воно дуже маленьке… точність
+    // дуже важко виставити»): − and + by one point, the number typed in, and a slider on a square-root scale, so 0-20%
+    // takes almost half of it
+    const toPos=v=>Math.round(Math.sqrt(Math.max(0,Math.min(200,v))/200)*1000),toLevel=p=>Math.round(200*(p/1000)**2);
+    pop.innerHTML=`<div class="layer-volume-head"><span>Гучність</span><div class="layer-volume-number"><button type="button" class="layer-volume-step" data-step="-1" aria-label="Тихіше на 1%">−</button><input type="number" min="0" max="200" step="1" value="${level}" aria-label="Гучність доріжки ${esc(label)}, відсотків"><span>%</span><button type="button" class="layer-volume-step" data-step="1" aria-label="Гучніше на 1%">+</button></div></div><input type="range" min="0" max="1000" step="1" value="${toPos(level)}" aria-label="Гучність доріжки ${esc(label)}"><div class="layer-volume-presets">${[2,5,10,20,50,100].map(v=>`<button type="button" data-level="${v}">${v}</button>`).join('')}</div>`;
+    const range=pop.querySelector('input[type=range]'),number=pop.querySelector('input[type=number]');
+    let current=level,timer=null;
+    const save=()=>{clearTimeout(timer);timer=setTimeout(()=>{
+      const volume=current/100,edits=clips.map(c=>({type:'set_clip_volume',payload:{clip_id:c.id,volume}}));
       (edits.length===1?action(edits[0].type,edits[0].payload,'Гучність змінено.'):action('batch',{actions:edits},'Гучність доріжки змінено.')).catch(()=>{});
-    });
+    },350);};
+    const set=(value,{fromRange=false,commit=true}={})=>{
+      current=Math.max(0,Math.min(200,Math.round(Number(value)||0)));
+      number.value=String(current);if(!fromRange)range.value=String(toPos(current));
+      pop.querySelectorAll('[data-level]').forEach(b=>b.classList.toggle('active',Number(b.dataset.level)===current));
+      if(commit)save();
+    };
+    range.addEventListener('input',()=>set(toLevel(Number(range.value)),{fromRange:true,commit:false}));
+    range.addEventListener('change',()=>set(toLevel(Number(range.value)),{fromRange:true}));
+    number.addEventListener('change',()=>set(number.value));
+    number.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();set(number.value);}});
+    pop.querySelectorAll('[data-step]').forEach(b=>b.addEventListener('click',()=>set(current+Number(b.dataset.step))));
+    pop.querySelectorAll('[data-level]').forEach(b=>b.addEventListener('click',()=>set(b.dataset.level)));
+    set(level,{commit:false});
     document.body.append(pop);
     const rect=button.getBoundingClientRect();pop.style.left=Math.min(innerWidth-pop.offsetWidth-8,rect.left)+'px';pop.style.top=Math.max(8,rect.top-pop.offsetHeight-6)+'px';
-    range.focus();
+    // nothing is selected or focused on opening (user, 26 November 2026: «автовиділення не нада»)
     const close=e=>{if(e.type==='keydown'&&e.key!=='Escape')return;if(e.type==='pointerdown'&&pop.contains(e.target))return;pop.remove();document.removeEventListener('pointerdown',close,true);document.removeEventListener('keydown',close,true);};
     setTimeout(()=>{document.addEventListener('pointerdown',close,true);document.addEventListener('keydown',close,true);});
   });

@@ -199,6 +199,25 @@ def reserve_aligned_opening(groups, timings, duration, seconds):
     return [intro] + (remaining if remaining else [[]]), True
 
 
+def frame_edge(seconds: float, fps: float) -> float:
+    """A moment on the grid of whole video frames, the same rounding the timeline gives every clip edge."""
+    return round(math.floor(float(seconds) * float(fps) + .5 + 1e-8) / float(fps), 6)
+
+
+def snap_frames(plan: dict, fps) -> dict:
+    """The plan's frame edges on whole video frames (user, 26 November 2026: «таймлайн має бути в першу чергу в кадрах…
+    все вирівнюватись»). The plan, the timeline and Razgon then hold the same numbers and compare by frames, with no
+    tolerance: a frame starting at 12.91 s beside a shot ending at 12.92 s stopped Antropov's run. The sentences keep
+    their spoken times; only the frame edges move, by at most half a video frame. `frame_grid` records the rate."""
+    fps = float(fps or 25)
+    for frame in plan.get("frames") or []:
+        start, end = frame_edge(frame["start"], fps), frame_edge(frame["end"], fps)
+        frame["start"], frame["end"] = start, max(end, round(start + 1 / fps, 6))
+    if plan.get("frames"):
+        plan["frame_grid"] = fps
+    return plan
+
+
 def aligned_times(groups, timings, duration, opening_seconds=None):
     boundaries, offset = [0.0], 0
     if opening_seconds is not None:
@@ -266,6 +285,9 @@ def validate_synced_plan(plan, duration):
         if crossing and (len(plan["frames"]) < 2 or plan["frames"][1].get("continuation") != crossing):
             raise ValueError("Продовження фрази після вступу не відповідає озвучці")
     expected = aligned_times(groups, timings, duration, opening_seconds)
+    if plan.get("frame_grid"):
+        grid = float(plan["frame_grid"])
+        expected = [(frame_edge(a, grid), max(frame_edge(b, grid), round(frame_edge(a, grid) + 1 / grid, 6))) for a, b in expected]
     offset = 0
     for frame, group, (start, end) in zip(plan["frames"], groups, expected):
         if abs(float(frame["start"]) - start) > .0011 or abs(float(frame["end"]) - end) > .0011 or frame.get("sentence_timings") != timings[offset:offset + len(group)]:

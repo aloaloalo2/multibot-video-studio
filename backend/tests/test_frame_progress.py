@@ -59,6 +59,13 @@ class FrameProgressTest(unittest.TestCase):
         self.assertEqual(frame_progress.frame_takes(shots, 12.91, 32.35), ['f003s01'])   # 0.01 s of frame 2's shot: rounding
         self.assertEqual(frame_progress.frame_takes(shots, 12.5, 32.35), ['f002s01', 'f003s01'])   # a real overlap stays
 
+    def test_plan_frame_edges_sit_on_whole_video_frames(self):
+        import planner
+        plan = {'frames': [{'number': 1, 'start': 0, 'end': 12.91}, {'number': 2, 'start': 12.91, 'end': 32.35}]}
+        planner.snap_frames(plan, 25)
+        self.assertEqual([(f['start'], f['end']) for f in plan['frames']], [(0.0, 12.92), (12.92, 32.36)])
+        self.assertEqual(plan['frame_grid'], 25.0)
+
     def test_an_episode_without_razgon_has_no_drawn_frames(self):
         with patch.object(store, "load_project", return_value={"id": "p" * 24, "episode_path": self.tmp.name}):
             self.assertEqual(frame_progress.drawn("p" * 24), [])

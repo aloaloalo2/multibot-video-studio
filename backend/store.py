@@ -1201,6 +1201,7 @@ def attach_plan(pid: str, plan: dict) -> dict:
                 plan = planner.keep_director_frames(dict(current, frame_source=None), plan)
             except (ValueError, TypeError, KeyError):
                 plan = dict(current, director_stale=True)
+        planner.snap_frames(plan, project.get("fps") or 25)   # frame edges on whole video frames
         if path.is_file():
             versions = project_dir(pid) / "plan-history"
             versions.mkdir(exist_ok=True)
@@ -1724,6 +1725,7 @@ def import_plan_data(cid: str, plan: dict, name: str, episode_path: str | None =
         project["tracks"].append({"id": "narration", "name": "Озвучка", "type": "universal", "z_index": len(project["tracks"]), "clips": [{"id": uuid.uuid4().hex[:12], "kind": "audio", "asset_id": audio["asset_id"], "start": 0, "duration": audio["duration"], "trim_start": 0, "volume": 1, "title": audio["name"]}]})
     recompute_universal_duration(project)
     imported_path = project_dir(project["id"]) / "imported-plan.json"
+    planner.snap_frames(plan, project.get("fps") or 25)   # frame edges on whole video frames
     atomic_json(imported_path, plan)
     project["plan_source"] = str(imported_path)
     if source_path:

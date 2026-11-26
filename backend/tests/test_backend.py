@@ -1124,7 +1124,7 @@ class BackendTest(unittest.TestCase):
         endpoint = "/api/projects/" + project["id"]
         status, result = self.request(endpoint + "/plan")
         self.assertEqual(status, 200)
-        self.assertEqual(result["plan"], plan)
+        self.assertEqual(result["plan"], {**plan, "frame_grid": 25.0})   # frame edges kept on whole video frames
         for path in ("/channels/" + cid, "/channels/" + cid + "/projects/" + project["id"], created["plan_url"]):
             status, html = self.request(path)
             self.assertEqual(status, 200)
