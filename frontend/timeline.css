@@ -76,9 +76,9 @@
 .time-ruler-marks .ruler-tick.minute{width:1px;height:5px;background:#91969f;}
 .time-ruler-marks .ruler-tick.labelled{height:6px;background:#a7acb3;}
 .time-ruler>.track-label{position:sticky;left:0;z-index:45;height:29px;display:flex;align-items:center;padding:0 8px;background:#1b1b20;border-right:1px solid #55555b;}
-.track-row,.track-row.universal-row{margin:0;min-height:28px;align-items:stretch;border-bottom:1px solid #161619;}
+.track-row,.track-row.universal-row{margin:0;min-height:28px;align-items:stretch;border-bottom:1px solid #232328;}
 .track-row>.layer-heading{position:sticky;left:0;z-index:20;height:100%;min-height:28px;align-self:stretch;display:flex;align-items:center;gap:4px;min-width:0;padding:2px 6px;background:#1e1e23;border:0;border-right:1px solid #55555b;border-radius:0;overflow:hidden;box-sizing:border-box;}
-.track-row:nth-child(even)>.layer-heading{background:#222227;}
+/* every row the same colour, no table stripes (user, 26 November 2026: «лінії таймлайну… одного кольору… зараз… таблицею») */
 .layer-name{flex:1;min-width:0;font-size:10px;padding:0;line-height:18px;}
 .layer-controls{display:flex;flex:none;gap:0;}
 .layer-controls button{width:15px;height:18px;min-height:0;padding:0;border:0;background:transparent;border-radius:1.5px;font-size:10px;}
@@ -217,3 +217,5 @@ html,body{overscroll-behavior:none;}
 
 /* a CapCut transition not drawn yet: white; blue once its picture is ready */
 .transition-join.has-transition.transition-pending{background:linear-gradient(90deg,transparent calc(50% - 1px),#f2f3f5 calc(50% - 1px),#f2f3f5 calc(50% + 1px),transparent calc(50% + 1px))}
+/* row names in a light weight, not bold (user, 26 November 2026: «підписи… не жирним, а тонким… плашка, кадри, озвучка») */
+.track-row>.layer-heading .stack-title,.track-row>.layer-heading .layer-name{font-weight:400}

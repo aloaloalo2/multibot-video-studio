@@ -247,7 +247,12 @@ def totals(data: dict, credit_rate=None) -> dict:
     result = {name: {"amount": 0., "unknown": 0, "estimated": False, "requests": 0}
               for name in ("openrouter", "claude_code", "elevenlabs", "fishaudio", "heygen")}
     language_usd = 0.
+    # the voices of the translations, apart from the episode's own narration and host videos: the «Мови» tab shows only what
+    # its languages cost (user, 26 November 2026: «нема перекладів, а воно пише 3.19»)
+    language_voice = {name: 0. for name in ("elevenlabs", "fishaudio", "heygen")}
     for event in data.get("events", {}).values():
+        if event.get("category") == "voice" and event.get("provider") in language_voice and number(event.get("amount")):
+            language_voice[event["provider"]] += event["amount"]
         if event.get("provider") not in result:
             continue
         item = result[event["provider"]]
@@ -265,7 +270,12 @@ def totals(data: dict, credit_rate=None) -> dict:
         item["usd"] = round(item["amount"] * credit_rate * 1.20, 6) if name == "elevenlabs" and number(credit_rate) else item["amount"] if name != "elevenlabs" else 0. if not item['requests'] else None
     result["elevenlabs"]["estimated"] |= bool(result["elevenlabs"]["requests"])
     result["claude_code"]["equivalent"] = True
-    return {"providers": result, "languages_usd": round(language_usd, 6), "updated_at": time.time()}
+    voice_usd = language_voice["fishaudio"] + language_voice["heygen"]
+    if language_voice["elevenlabs"]:
+        voice_usd = voice_usd + language_voice["elevenlabs"] * credit_rate * 1.20 if number(credit_rate) else None
+    return {"providers": result, "languages_usd": round(language_usd, 6),
+            "language_voice_usd": round(voice_usd, 6) if voice_usd is not None else None,
+            "language_voice_estimated": bool(language_voice["elevenlabs"]), "updated_at": time.time()}
 
 
 def summary(pid: str, *, credit_rate=None, refresh=False) -> dict:

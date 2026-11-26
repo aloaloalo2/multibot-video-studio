@@ -48,10 +48,10 @@ function updateLanguageCostBadge(id){
   const owner=id;
   loadProjectCosts(id).then(data=>{
     if(state.project?.id!==owner)return;
-    const eleven=data.providers?.elevenlabs;
-    const amount=(data.languages_usd||0)+(eleven?.usd||0)+(data.providers?.fishaudio?.usd||0)+(data.providers?.heygen?.usd||0);
-    // nothing spent shows nothing (user, 26 November 2026: «якщо 0 доларів… суму… взагалі не показує»)
-    badge.textContent=amount>=.005?`${eleven?.requests?'≈ ':''}${projectCostMoney(amount)}`:'';
-    badge.title='Переклади й оцінка вартості озвучення ElevenLabs, Fish Audio та HeyGen';
+    // only the languages: their translation and their voices, never the episode's own narration or host videos
+    // (user, 26 November 2026: «нема перекладів, а воно пише 3.19»); nothing spent shows nothing
+    const amount=(data.languages_usd||0)+(data.language_voice_usd||0);
+    badge.textContent=amount>=.005?`${data.language_voice_estimated?'≈ ':''}${projectCostMoney(amount)}`:'';
+    badge.title='Переклади та їхня озвучка';
   }).catch(()=>{if(state.project?.id===owner)badge.textContent='';});
 }

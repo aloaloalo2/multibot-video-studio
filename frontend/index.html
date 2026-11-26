@@ -4,8 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>VideoKey Studio</title>
-  <script>if(location.protocol==='file:')document.documentElement.classList.add('opened-as-file');</script>
+  <script>if(location.protocol==='file:')document.documentElement.classList.add('opened-as-file');
+  // a reload of a project's address shows no main page while the studio starts and opens the project (user, 26 November
+  // 2026: «сторінку оновляю… блимає головна, потім перекидає в проект»); app.js drops the mark once it takes over
+  if(/\/projects\/[0-9a-f]{24}/.test(location.pathname))document.documentElement.classList.add('restoring-project');</script>
   <style>
+    html.restoring-project #channel-overview{display:none}
     .file-launch-notice{display:none}
     html.opened-as-file body{margin:0;background:#111114;color:#f2f2f4;font:16px/1.5 system-ui,sans-serif}
     html.opened-as-file .app-shell,html.opened-as-file #modal-backdrop{display:none}

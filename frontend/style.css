@@ -3557,3 +3557,8 @@ select option{background:#232327;color:#f1f1f2}
    канала… в проєкті розмір… подобається… такий самий і на головній») */
 .app-shell:not(.editor-open) #project-title .channel-icon{width:32px;height:32px}
 .app-shell:not(.editor-open) #project-title>strong{gap:11px}   /* the same space to the name as in a project */
+/* The project tabs hang from the header's bottom line: flat on top against it, rounded below, with no second line of their
+   own (user, 26 November 2026: «вкладки… прикріпив доверху до цієї лінії») */
+.editor-open .topbar{margin-bottom:0}
+.app-shell.editor-open .project-views{padding-top:0;padding-left:23.1px;border-bottom:0}   /* the first tab stands over the left panel's edge */
+.app-shell.editor-open .project-views button{border-radius:0 0 12.5px 12.5px}

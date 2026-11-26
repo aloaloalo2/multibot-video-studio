@@ -57,6 +57,7 @@ async function restoreCurrentLocation(){
   state.restoringProject=!!locationRoute()?.projectId;
   $('project-loading').hidden=!state.restoringProject || !!state.project;
   if(state.restoringProject && !state.project)$('channel-overview').hidden=true;
+  globalThis.document?.documentElement?.classList.remove('restoring-project');   // the hidden attribute takes over from the page's first mark
   const generation=restoreGeneration,path=location.pathname;
   try{await loadChannels(undefined,{restoreLocation:true});}
   catch(error){

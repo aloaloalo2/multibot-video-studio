@@ -35,6 +35,17 @@ class ProjectCostsTest(unittest.TestCase):
         self.save('narration/job.json',{'status':'done','provider':'elevenlabs','estimated_credits':20,'started_at':2})
         self.assertEqual(project_costs.totals(self.collect(data),.0002)['providers']['elevenlabs']['amount'],120)
 
+    def test_languages_sum_counts_only_the_translations_voices(self):
+        # the episode's own narration and host video stay out of the «Мови» sum
+        self.save('narration/receipts/eleven.json',{'identity':'eleven-1','provider':'elevenlabs','amount':1000})
+        self.save('heygen-frames/a.json',{'video_id':'v1','identity':{'start':0,'end':60},'usd_per_minute':.99})
+        totals=project_costs.totals(self.collect(),.0002)
+        self.assertEqual(totals['language_voice_usd'],0);self.assertFalse(totals['language_voice_estimated'])
+        self.save('languages/es/parts/request.json',{'provider':'elevenlabs'})
+        self.save('languages/es/parts/requests.json',[{'request_id':'r1','status':'complete','actual_cost':500}])
+        totals=project_costs.totals(self.collect(),.0002)
+        self.assertAlmostEqual(totals['language_voice_usd'],500*.0002*1.2);self.assertTrue(totals['language_voice_estimated'])
+
     def test_usage_deduplication_and_claude_reports_are_separate(self):
         receipt={'request_id':'or1','usage':{'cost':.02}}
         self.save('languages/es/translation-attempts/a/1.json',receipt)
