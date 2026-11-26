@@ -413,7 +413,7 @@ def _main(argv=None) -> int:
             print(f"Перевірка пройшла: {data['frames']} кадрів" if args.dry_run else f"План кадрів записано в студію: {data['frames']} кадрів")
             return 0
         if args.command == "closing":
-            data = call("POST", f"/api/projects/{pid}/closing-signature", {"text": args.text}) if args.text else call("GET", f"/api/projects/{pid}/closing-signature")
+            data = call("POST", f"/api/projects/{pid}/closing-signature", {"text": args.text or ""})
             print(data.get("signature") or "Фірмової кінцівки каналу ще немає.")
             return 0
         if args.command == "numbers":

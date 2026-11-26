@@ -2151,10 +2151,10 @@ class Handler(BaseHTTPRequestHandler):
         # the channel's signature closing, written once by the frame agent of its first film that ends on the host and kept
         # for the channel's next films (user, 26 November 2026: «щоб в канала була своя особливість… не як шаблон»)
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/closing-signature", path)
-        if match and method in ("GET", "POST"):
+        if match and method == "POST":   # an empty text only reads it
             cid = store.load_project(match.group(1))["channel_id"]
             current = str(store.read_channel_settings(store.get_channel_folder(cid), {}).get("closing_signature") or "")
-            if method == "POST" and not current:
+            if (body or {}).get("text") and not current:
                 text = " ".join(str((body or {}).get("text") or "").split())[:600]
                 if len(text) < 20:
                     raise store.StudioError("Опишіть фірмову кінцівку каналу одним-двома реченнями", 400)
