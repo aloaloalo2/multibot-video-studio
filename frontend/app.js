@@ -28,10 +28,15 @@ let studioFontCatalog=[];
 const studioFontsReady=fetch('/fonts/catalog.json').then(async response=>{
   if(!response.ok)throw new Error('Каталог шрифтів недоступний');
   const entries=await response.json();
+  // A family the page defines already (Inter, the interface's own) is not defined again: a second rule for it, not yet
+  // loaded, took over and the whole interface showed the system font for a moment, then Inter again (user, 26 November
+  // 2026: «коли оновлюю сторінку шрифт змінюється від іншого до іншого»). The others wait for their file (block): with
+  // swap a frame's text showed a stand-in font first and changed when its own came in.
+  const defined=new Set([...document.fonts].map(face=>face.family.replace(/^["']|["']$/g,'')));
   const style=document.createElement('style');style.id='studio-font-faces';
-  style.textContent=entries.flatMap(entry=>[
-    `@font-face{font-family:${JSON.stringify(entry.family)};src:url('/fonts/${entry.regular}') format('truetype');font-weight:400;font-display:swap;}`,
-    `@font-face{font-family:${JSON.stringify(entry.family)};src:url('/fonts/${entry.bold}') format('truetype');font-weight:700;font-display:swap;}`
+  style.textContent=entries.filter(entry=>!defined.has(entry.family)).flatMap(entry=>[
+    `@font-face{font-family:${JSON.stringify(entry.family)};src:url('/fonts/${entry.regular}') format('truetype');font-weight:400;font-display:block;}`,
+    `@font-face{font-family:${JSON.stringify(entry.family)};src:url('/fonts/${entry.bold}') format('truetype');font-weight:700;font-display:block;}`
   ]).join('\n');document.head.append(style);studioFontCatalog=entries;
   return Promise.all([document.fonts.load('500 32px Golos'),document.fonts.load('500 32px Literata')]);
 }).catch(error=>{console.error('Шрифти студії:',error);return [];});
@@ -1018,7 +1023,7 @@ function updatePreviewViewport(){
   state.previewPanY=Math.max(-limitY,Math.min(limitY,state.previewPanY));
   $('preview-content').style.transform=`translate(${state.previewPanX}px,${state.previewPanY}px) scale(${zoom})`;
   surface.classList.toggle('is-zoomed',zoom>1);
-  surface.title=zoom>1?'Перетягніть кадр рукою. Натисніть ще раз, щоб віддалити.':'';   // no hint over the picture (user, 26 November 2026: «прибери… натисніть, щоб приблизити, воно заважає»)
+  surface.removeAttribute('title');   // no hint over the picture, zoomed or not (user, 26 November 2026: «удали підказку»)
   $('preview-zoom-out').disabled=!state.project || zoom<=previewZoomLevels[0];
   $('preview-zoom-in').disabled=!state.project || zoom>=previewZoomLevels.at(-1);
   $('preview-zoom-reset').disabled=!state.project || zoom===1;
@@ -1523,7 +1528,7 @@ function openChannelSettings(channel) {
     <section class="settings-section regular-only settings-visual-formats"><div class="visual-formats-heading"><h3>Візуальні формати</h3></div><p id="settings-weights-purpose">Яку частку ролику займає кожен формат. Режисер тримається близько до неї (у межах 5%). Зміна одного поля не змінює інші.</p><div id="settings-weights" class="weights-grid"></div><label class="generated-image-preferences">Створені зображення · побажання<textarea id="settings-generated-image-style" rows="3" maxlength="4000" placeholder="Наприклад: наукові ілюстрації, рентген, інфографіка; великі об’єкти та мінімум деталей">${esc(original.generated_image_style || '')}</textarea></label><div class="weights-summary"><strong id="settings-total">Разом 100%</strong><div id="settings-bar" class="weights-bar" aria-hidden="true"></div><div id="settings-legend" class="weights-legend" aria-label="Пропорції форматів"></div><p id="settings-feedback" role="status"></p></div><button id="normalize-weights" class="secondary" type="button">Привести до 100%</button></section>
     <section class="settings-section regular-only planned-only settings-opening"><h3>Початок ролика</h3><div class="settings-three-column">${openingSequence(original).map((value,index)=>`<label>Кадр ${index+1}<select id="settings-open-${index+1}" data-opening-frame="${index+1}"><option value="auto" ${value==='auto'?'selected':''}>Авто</option>${keys.map(key=>`<option value="${key}" ${value===key?'selected':''}>${names[key]}</option>`).join('')}</select></label>`).join('')}</div></section>
     <section class="settings-section regular-only planned-only settings-closing"><h3>Кінець ролика</h3><div class="settings-three-column">${closingSequence(original).map((value,index)=>`<label>${['Третій з кінця','Передостанній','Останній кадр'][index]}<select id="settings-close-${index+1}" data-closing-frame="${index+1}"><option value="auto" ${value==='auto'?'selected':''}>Авто</option>${keys.map(key=>`<option value="${key}" ${value===key?'selected':''}>${names[key]}</option>`).join('')}</select></label>`).join('')}</div></section>
-    <section class="settings-section settings-output"><h3>Формат відео</h3><div class="settings-three-column"><label>Роздільність<select id="settings-video-size">${[['1280x720','HD · 1280×720'],['1920x1080','Full HD · 1920×1080'],['2560x1440','2K · 2560×1440'],['3840x2160','4K · 3840×2160']].map(([value,label])=>`<option value="${value}" ${value===(original.video_size||'1920x1080')?'selected':''}>${label}</option>`).join('')}</select></label><label>Кадрів за секунду<select id="settings-video-fps">${[24,25,30,50,60].map(value=>`<option value="${value}" ${value===Number(original.video_fps||25)?'selected':''}>${value}</option>`).join('')}</select></label><label>Якість (бітрейт)<select id="settings-video-quality">${[['standard','Стандартна'],['high','Висока'],['max','Найвища']].map(([value,label])=>`<option value="${value}" ${value===(original.video_quality||'standard')?'selected':''}>${label}</option>`).join('')}</select></label></div><p id="settings-video-note">Для нових проєктів. Якість можна змінити під час експорту.</p></section>
+    <section class="settings-section settings-output"><h3>Формат відео</h3><div class="settings-three-column"><label>Роздільність<select id="settings-video-size">${[['1280x720','HD · 1280×720'],['1920x1080','Full HD · 1920×1080'],['2560x1440','2K · 2560×1440'],['3840x2160','4K · 3840×2160']].map(([value,label])=>`<option value="${value}" ${value===(original.video_size||'1920x1080')?'selected':''}>${label}</option>`).join('')}</select></label><label>Кадрів за секунду<select id="settings-video-fps">${[24,25,30,50,60].map(value=>`<option value="${value}" ${value===Number(original.video_fps||25)?'selected':''}>${value}</option>`).join('')}</select></label><label>Якість (бітрейт)<select id="settings-video-quality">${[['high','Висока'],['max','Найвища']].map(([value,label])=>`<option value="${value}" ${value===(original.video_quality==='max'?'max':'high')?'selected':''}>${label}</option>`).join('')}</select></label></div><p id="settings-video-note">Для нових проєктів. Якість можна змінити під час експорту.</p></section>
     <section class="settings-section settings-script-wishes"><h3>Побажання сценаристу</h3><textarea id="settings-script-wishes" rows="6" maxlength="30000" placeholder="Подача, мова, звернення до глядача, початок і завершення сценарію">${esc(original.script_wishes || '')}</textarea></section>
     <section class="settings-section settings-thumbnail-wishes"><h3>Побажання до прев’ю</h3><textarea id="settings-thumbnail-wishes" rows="3" maxlength="4000" placeholder="Стиль, композиція, текст та інші побажання для прев’ю каналу">${esc(original.thumbnail_wishes || '')}</textarea></section><section class="settings-section regular-only settings-accents"><h3>Моушн-дизайн на кадрах</h3><label class="check"><input id="settings-accents" type="checkbox" ${original.accents?'checked':''}>Моушн-дизайн на фото</label><label class="check"><input id="settings-host-graphics" type="checkbox" ${original.host_graphics?'checked':''}>Моушн-дизайн над ведучим HeyGen</label></section>
     ${channelSoundMarkup()}<section class="settings-section" id="channel-voices"><h3>Голоси для перекладу</h3><p>Завантажуємо…</p></section>
@@ -1823,9 +1828,10 @@ function exportActions(){
 // (user, 1 November 2026: «2 мегабіта мені в принципі подобалась якість», the others on choice). An all-Razgon film
 // keeps the bridge's own encoding, so it shows no choice.
 // The three bitrates grow with the episode's size and frame rate (the server's video_bitrates); the window starts from the
-// channel's «Якість (бітрейт)» in its settings, standard unless the channel says otherwise.
+// channel's «Якість (бітрейт)» in its settings, «Висока» unless the channel chose «Найвища».
 const exportQualityNames=[['standard','Стандартна','менший файл'],['high','Висока','чистіше на русі, для YouTube'],['max','Найвища','найбільший файл']];
-function exportQualities(){const rates=state.project?.video_bitrates || [2000000,8000000,12000000];return exportQualityNames.map(([key,name,note],index)=>[rates[index],name,note,key]);}
+// «Стандартна» (2 Mbit/s at Full HD) is not offered any more (user, 26 November 2026: «2 біт убери з рендера»)
+function exportQualities(){const rates=state.project?.video_bitrates || [2000000,8000000,12000000];return exportQualityNames.map(([key,name,note],index)=>[rates[index],name,note,key]).filter(([,,,key])=>key!=='standard');}
 const sizeNames={'1280x720':'HD','1920x1080':'Full HD','2560x1440':'2K','3840x2160':'4K'};
 function exportSize(bitrate){
   const bytes=(bitrate+192000)*Number(state.project?.duration || 0)/8;
@@ -1834,7 +1840,7 @@ function exportSize(bitrate){
 function exportQualityHtml(){
   const clips=filmClips(state.project);
   if(directorAnimated()&&clips.length&&clips.every(clip=>/^Razgon · кадр/.test(clip.title || '')))return '';
-  const chosen=state.channel?.settings?.video_quality || 'standard',size=`${state.project.width}x${state.project.height}`;
+  const chosen=state.channel?.settings?.video_quality==='max'?'max':'high',size=`${state.project.width}x${state.project.height}`;
   const format=`${sizeNames[size] || ''} ${state.project.width}×${state.project.height} · ${state.project.fps} кадрів/с`.trim();
   return `<fieldset class="export-quality"><legend>Якість відео <small>${format}</small></legend>${exportQualities().map(([value,name,note,key])=>`<label class="export-quality-option"><input type="radio" name="export-quality" value="${value}" ${key===chosen?'checked':''}><span><b>${name} · ${String(value/1e6).replace('.',',')} Мбіт/с</b><small>${note}</small></span><em>${exportSize(value)}</em></label>`).join('')}</fieldset>`;
 }

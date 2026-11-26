@@ -4,11 +4,15 @@
 The preview runs it live (frontend/motion-code.js); the export renders the same runtime on the studio's own
 /motion-code.html into a ProRes 4444 video with alpha (tools/motion_code_render.mjs), laid over the frame like any video.
 """
+from __future__ import annotations
+
 import hashlib
+import re
 import json
 import os
 import shutil
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -44,15 +48,48 @@ def _modules() -> Path:
 PAD = 1.6   # seconds drawn before and after a clip: room for any transition at its edges (joins.MAX_SQUEEZE · natural length)
 
 
+FOLLOW_USE = re.compile(r"info\.(pin|onPhoto|photo)\b")
+_PLACE_KEYS = ("start", "duration", "x", "y", "width", "height", "scale", "easing", "keyframes")
+
+
+def follow_of(project: dict, clip: dict) -> dict | None:
+    """The frame's picture the code pins its elements to (user, 26 November 2026: «навчи привязувати елементи легко шоб
+    рух повторювався»): the largest picture of the code clip's frame group, its blurred backing and accents left out,
+    with its place, zoom and keyframes; the same choice as codeFollow in frontend/universal.js."""
+    group = next((g for g in project.get("scene_groups", []) if clip.get("id") in g.get("clip_ids", [])), None)
+    if not group:
+        return None
+    clips = {c["id"]: c for t in project.get("tracks", []) for c in t.get("clips", [])}
+    best = None
+    for cid in group.get("clip_ids", []):
+        c = clips.get(cid)
+        title = str((c or {}).get("title", "")).lower()
+        if not c or cid == clip.get("id") or c.get("kind") not in ("image", "video") or c.get("content_type") or c.get("frame_background") \
+                or "чорний фон" in title or " фон" in title or "акцент" in title:
+            continue
+        area = float(c.get("width", 1)) * float(c.get("height", 1))
+        if best is None or area > best[0] + 1e-9:
+            best = (area, c)
+    return {k: best[1].get(k) for k in _PLACE_KEYS} if best else None
+
+
 def spec(project: dict, clip: dict) -> dict:
-    return {"code": clip.get("code") or "", "width": int(project.get("width") or 1920), "height": int(project.get("height") or 1080),
+    follow = {}
+    if FOLLOW_USE.search(clip.get("code") or ""):   # only a code that pins to the picture carries it (and re-renders with it)
+        follow = {"follow": follow_of(project, clip), "self": {k: clip.get(k) for k in _PLACE_KEYS}}
+    return {**follow, "code": clip.get("code") or "", "width": int(project.get("width") or 1920), "height": int(project.get("height") or 1080),
             "fps": int(project.get("fps") or 25), "duration": float(clip["duration"]), "words": clip.get("code_words") or [],
             "pad_head": PAD, "pad_tail": PAD,
             "assets": {name: f"/api/projects/{project['id']}/assets/{aid}/file" for name, aid in (clip.get("code_assets") or {}).items()}}
 
 
+CHECK_PART = re.compile(rb"[ \t]*/\* check:start.*?/\* check:end \*/(?:[ \t]*\n)?", re.S)
+
+
 def fingerprint(data: dict) -> str:
-    runtime = [hashlib.sha256(path.read_bytes()).hexdigest() for path in RUNTIME if path.is_file()]
+    # the text check's parts of the runtime (marked check:start … check:end) never change the drawing: a change to them
+    # left every render of every episode out of date (61 clips of Astrofizika, 26 November 2026)
+    runtime = [hashlib.sha256(CHECK_PART.sub(b"", path.read_bytes())).hexdigest() for path in RUNTIME if path.is_file()]
     return hashlib.sha256(json.dumps([data, runtime], sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
@@ -105,6 +142,40 @@ def prune(project: dict) -> int:
     return freed
 
 
+RENDER_AT_ONCE = 3   # one Chromium each, some 0.3–0.5 GB; a clip of 20 s takes about 25 s alone
+# for the whole process: every thread that built a manifest (the CapCut warm-up, stills, an export) started its own three
+# and the server ran fifteen Chromiums at once, the same clips twice (26 November 2026)
+_SLOTS = threading.BoundedSemaphore(RENDER_AT_ONCE)
+_TARGETS: dict = {}
+_TARGETS_LOCK = threading.Lock()
+
+
+def render_all(project: dict) -> None:
+    """Every motion-code clip of the project not rendered yet, RENDER_AT_ONCE at a time: the export rendered them one
+    after another, 48 changed clips some 20 minutes (26 November 2026, «швидкий… експорт»). A clip that fails here is
+    left to the export's own call, which reports it."""
+    from concurrent.futures import ThreadPoolExecutor
+    clips = [c for t in project.get("tracks", []) for c in t.get("clips", []) if c.get("content_type") == "code"]
+    folder = store.cache_dir(project) / "motion-code"
+    todo = []
+    for clip in clips:
+        try:
+            if not (folder / (fingerprint(spec(project, clip))[:32] + ".mov")).is_file():
+                todo.append(clip)
+        except (store.StudioError, ValueError, KeyError):
+            continue
+    if len(todo) < 2:
+        return
+
+    def one(clip):
+        try:
+            render(project, clip)
+        except (store.StudioError, OSError, subprocess.SubprocessError):
+            pass
+    with ThreadPoolExecutor(RENDER_AT_ONCE) as pool:
+        list(pool.map(one, todo))
+
+
 def render(project: dict, clip: dict) -> Path:
     """The clip as a transparent video, made once for the same code, size, rate and length (the cache of the episode)."""
     data = spec(project, clip)
@@ -114,6 +185,16 @@ def render(project: dict, clip: dict) -> Path:
     target = folder / (fingerprint(data)[:32] + ".mov")
     if target.is_file() and target.stat().st_size:
         return target
+    with _TARGETS_LOCK:
+        lock = _TARGETS.setdefault(str(target), threading.Lock())
+    with lock:   # a second caller of the same clip waits for the first and takes its file
+        if target.is_file() and target.stat().st_size:
+            return target
+        with _SLOTS:
+            return _render(data, clip, target)
+
+
+def _render(data: dict, clip: dict, target: Path) -> Path:
     spec_file = target.with_suffix(".json")
     store.atomic_json(spec_file, data)
     answer = _run(["--spec", str(spec_file), "--out", str(target)], timeout=max(120, int(data["duration"] * 30)))

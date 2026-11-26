@@ -27,6 +27,9 @@ def build(project: dict, *, visual_only=False, include_transitions=True) -> dict
     # the channel plate stays sharp over a CapCut effect: an effect that changes the picture draws what lies under it
     # without the plate (engine/capcut_fx.py)
     overlay_ids = {cid for group in project.get("scene_groups", []) if group.get("role") == "overlay" for cid in group.get("clip_ids", [])}
+    if any(c.get("content_type") == "code" for t in project.get("tracks", []) for c in t.get("clips", [])):
+        import motion_code
+        motion_code.render_all(project)   # the clips not rendered yet, several at once, before the loop asks for each
     for z, layer in enumerate(project.get("tracks", [])):
         rendered_clips = []
         for clip in layer.get("clips", []):

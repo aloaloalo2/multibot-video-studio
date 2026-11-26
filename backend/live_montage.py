@@ -195,19 +195,40 @@ def host_inset(ctx, spec: dict) -> None:
 MOVES = ("pan_right", "zoom_in", "pan_left", "zoom_out")
 
 
+def stands_still(frame: dict) -> bool:
+    """True when nothing in the frame moves the picture: no video, no Razgon block, no motion preset and no layer whose
+    keyframes change its place or size (a motion-code layer may animate inside itself; the frame still stands)."""
+    for c in frame["clips"]:
+        if c.get("frame_background") or "чорний фон" in str(c.get("title", "")):
+            continue
+        if c.get("kind") == "video" or str(c.get("title", "")).startswith("Razgon") or c.get("preset"):
+            return False
+        if c.get("content_type") == "code":
+            continue
+        points = c.get("keyframes") or []
+        for key in ("x", "y", "scale"):
+            values = [float(p[key]) for p in points if key in p]
+            if values and max(values) - min(values) > 1e-4:
+                return False
+    return True
+
+
 def frame_camera(ctx, spec: dict) -> None:
-    """spec: {"frames": [N, …] (every animation frame when empty), "move": one of native_animation.CAMERA_MOVES or
-    "alternate" (default), "amount": 0.02…0.12}. Frames with a camera already, or with no layers, are left alone."""
+    """spec: {"frames": [N, …] (every frame that stands still when empty), "move": one of native_animation.CAMERA_MOVES
+    or "alternate" (default), "amount": 0.02…0.12}. The whole frame moves as one: its picture, motion code and accents
+    keep their places on each other. A frame that moves already is left alone (user, 26 November 2026: «там де камера не
+    рухається там треба кадр рухати… для ефекту руху»; frame 71 of Astrofizika, a photo under motion code, stood still)."""
     fps = int(ctx.project.get("fps") or 25)
     wanted = set(spec.get("frames") or [])
-    by_number = {f["number"]: f for f in (ctx.plan or {}).get("frames", [])}
     move, amount, k = spec.get("move", "alternate"), spec.get("amount", native_animation.CAMERA_AMOUNT), 0
     moved = []
     for frame in ctx.frames:
-        planned = by_number.get(frame["number"])
-        if not planned or planned.get("format") != "animation" or (wanted and frame["number"] not in wanted):
+        if wanted and frame["number"] not in wanted:
             continue
-        layers = [c for c in frame["clips"] if not c.get("frame_background") and "чорний фон" not in str(c.get("title", ""))]
+        if not stands_still(frame):
+            continue
+        layers = [c for c in frame["clips"] if not c.get("frame_background") and "чорний фон" not in str(c.get("title", ""))
+                  and c.get("kind") != "audio"]
         if not layers:
             continue
         name = MOVES[k % len(MOVES)] if move == "alternate" else move

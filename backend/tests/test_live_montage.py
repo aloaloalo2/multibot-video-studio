@@ -51,3 +51,22 @@ class HostInsetTest(unittest.TestCase):
         self.assertEqual(times, [(0.0, 4.5), (4.5, 7.5), (7.5, 12)])
         short = planner.aligned_times([["a"], ["b"], ["c"]], [{"start": 0, "end": 3.9}, {"start": 4, "end": 6}, {"start": 6, "end": 9}], 9, None, [0, .5, 0])
         self.assertAlmostEqual(short[1][1] - short[1][0], planner.HOST_MIN_VISIBLE)   # a short phrase keeps 1.5 s on screen
+
+
+class StandsStillTest(unittest.TestCase):
+    """A frame where nothing moves the picture gets the camera; one that moves is left (26 November 2026, frame 71)."""
+
+    def test_still_photo_under_motion_code_counts_as_standing(self):
+        frame = {"number": 71, "clips": [
+            {"kind": "animation", "title": "K071 чорний фон", "keyframes": []},
+            {"kind": "image", "title": "K071 кадр", "keyframes": []},
+            {"kind": "animation", "content_type": "code", "title": "K071 моушн", "keyframes": []}]}
+        self.assertTrue(live_montage.stands_still(frame))
+
+    def test_a_zoom_a_video_or_a_razgon_block_moves_the_frame(self):
+        zoom = {"kind": "image", "keyframes": [{"time": 0, "scale": 1.02}, {"time": 5, "scale": 1.1}]}
+        self.assertFalse(live_montage.stands_still({"clips": [zoom]}))
+        self.assertFalse(live_montage.stands_still({"clips": [{"kind": "video", "keyframes": []}]}))
+        self.assertFalse(live_montage.stands_still({"clips": [{"kind": "animation", "title": "Razgon · кадр 004"}]}))
+        fade = {"kind": "image", "keyframes": [{"time": 0, "opacity": 0}, {"time": 1, "opacity": 1}]}
+        self.assertTrue(live_montage.stands_still({"clips": [fade]}))

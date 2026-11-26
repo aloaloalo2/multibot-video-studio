@@ -606,8 +606,11 @@ def film_sounds(pid: str) -> None:
         if store.project_animated(project):
             return
         import montage_ops
-        # the text frames first stand as one centred block each (25 November 2026), so the sounds follow the final words
-        montage_ops.run(pid, [{"op": "compose_text"}, {"op": "transition_sounds"}, {"op": "typing_sounds"}, {"op": "drawing_sounds"}])
+        # the text frames first stand as one centred block each (25 November 2026), so the sounds follow the final words;
+        # then every frame that stands still gets a slow camera (user, 26 November 2026: «там де камера не рухається там
+        # треба кадр рухати»)
+        montage_ops.run(pid, [{"op": "compose_text"}, {"op": "frame_camera"}, {"op": "transition_sounds"}, {"op": "typing_sounds"},
+                              {"op": "drawing_sounds"}])
         import event_sounds
         event_sounds.start(pid)
     except Exception as error:   # the film is done either way; the sounds can be laid again

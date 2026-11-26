@@ -1421,24 +1421,92 @@ def _capcut_transition_preview(project: dict, join_id: str) -> dict:
             output = capcut_run(["--manifest", str(manifest_path), "--clip", "capcut-" + join_id, "--width", str(width), "--height", str(height)])
         finally:
             manifest_path.unlink(missing_ok=True)
-    capcut_mark_ready(project["id"], join)
-    return {"url": f"/api/capcut/media/{output.name}", "seam": join["seam"], "duration": join["duration"], "type": join["type"]}
+    url = f"/api/capcut/media/{output.name}"
+    capcut_mark_ready(project["id"], join, url, project)
+    return {"url": url, "seam": join["seam"], "duration": join["duration"], "type": join["type"]}
 
 
 CAPCUT_READY: dict = {}   # {project id: {join id: (type, duration, seam)}}: the CapCut transitions drawn for the preview
+CAPCUT_READY_LOCK = threading.Lock()   # its own: CAPCUT_LOCK is held while an effect's preview is drawn
+CAPCUT_URLS: dict = {}    # {project id: {join id: (sides, url)}}: the drawn film of a seam and the two frames it was drawn from
 
 
-def capcut_mark_ready(pid: str, join: dict) -> None:
-    CAPCUT_READY.setdefault(pid, {})[join["id"]] = (join.get("type"), round(float(join.get("duration", 0)), 3), round(float(join.get("seam", 0)), 3))
+def capcut_sides(project: dict, join: dict) -> str:
+    """The clips of the two frames at a seam as they are now (time, trim, source, place and motion): a preview drawn
+    from other pictures is not handed out as ready."""
+    clips = {c["id"]: c for t in project.get("tracks", []) for c in t.get("clips", [])}
+    groups = {g["id"]: g for g in project.get("scene_groups", [])}
+    sides = []
+    for ref in (join.get("from_ref"), join.get("to_ref")):
+        group = groups.get(str(ref or "").split(":")[-1]) or {}
+        sides.append([[c.get(k) for k in ("id", "start", "duration", "trim_start", "asset_id", "x", "y", "scale", "opacity", "keyframes", "code")]
+                      for c in (clips.get(i) for i in group.get("clip_ids", [])) if c])
+    return hashlib.sha256(json.dumps(sides, sort_keys=True, default=str).encode()).hexdigest()[:16]
+
+
+def _capcut_ready_file(pid: str) -> Path:
+    return store.project_dir(pid) / "capcut" / "ready.json"
+
+
+def _capcut_load(pid: str) -> None:
+    """The drawn seams of an episode as the last server left them: after a restart the editor played them only once the
+    warm-up had confirmed each one again, a minute later (26 November 2026). A film whose file is gone is not taken."""
+    if pid in CAPCUT_READY:
+        return
+    CAPCUT_READY[pid], CAPCUT_URLS[pid] = {}, {}
+    try:
+        saved = store.read_json(_capcut_ready_file(pid), {}) or {}
+    except (OSError, ValueError, store.StudioError):
+        return
+    for jid, item in saved.items():
+        try:
+            name = str(item["url"]).rsplit("/", 1)[-1]
+            if not (store.DATA_ROOT / "capcut-cache" / name).is_file():
+                continue
+            CAPCUT_READY[pid][jid] = tuple(item["key"])
+            CAPCUT_URLS[pid][jid] = (item["sides"], item["url"])
+        except (KeyError, TypeError, ValueError):
+            continue
+
+
+def capcut_mark_ready(pid: str, join: dict, url: str | None = None, project: dict | None = None) -> None:
+    with CAPCUT_READY_LOCK:
+        _capcut_load(pid)
+        key = (join.get("type"), round(float(join.get("duration", 0)), 3), round(float(join.get("seam", 0)), 3))
+        CAPCUT_READY.setdefault(pid, {})[join["id"]] = key
+        if url and project is not None:
+            CAPCUT_URLS.setdefault(pid, {})[join["id"]] = (capcut_sides(project, join), url)
+            saved = {jid: {"key": list(CAPCUT_READY[pid][jid]), "sides": sides, "url": film}
+                     for jid, (sides, film) in CAPCUT_URLS[pid].items() if jid in CAPCUT_READY[pid]}
+            try:
+                _capcut_ready_file(pid).parent.mkdir(parents=True, exist_ok=True)
+                store.atomic_json(_capcut_ready_file(pid), saved)
+            except OSError:
+                pass
 
 
 def capcut_ready(project: dict) -> list:
     """The ids of the project's CapCut transitions whose preview is drawn as they are now (type, length and seam): the
     timeline marks the others white until they are (user, 25 November 2026: «переходи, які сині… зроби їх білі, якщо вони
     не показуються ще такими, як вони мають бути»)."""
+    with CAPCUT_READY_LOCK:
+        _capcut_load(project["id"])
     drawn = CAPCUT_READY.get(project["id"], {})
     return [j["id"] for j in project.get("join_transitions", []) if j.get("type") in joins.CAPCUT
             and drawn.get(j["id"]) == (j.get("type"), round(float(j.get("duration", 0)), 3), round(float(j.get("seam", 0)), 3))]
+
+
+def capcut_ready_urls(project: dict, ready: list) -> dict:
+    """{join id: url} of the drawn seams whose two frames are unchanged since: the editor plays them at once, with no
+    request a seam (user, 26 November 2026: «переходи в прев'ю, щоб моментально я міг їх просто подивитися»)."""
+    films = CAPCUT_URLS.get(project["id"], {})
+    by_id = {j["id"]: j for j in project.get("join_transitions", [])}
+    answer = {}
+    for jid in ready:
+        hit = films.get(jid)
+        if hit and jid in by_id and hit[0] == capcut_sides(project, by_id[jid]):
+            answer[jid] = hit[1]
+    return answer
 
 
 _DERIVED = {}
@@ -2143,7 +2211,8 @@ class Handler(BaseHTTPRequestHandler):
         if match:
             project = store.load_project(match.group(1))
             warm_capcut(project["id"], project)   # the rest is drawn ahead in the background
-            return self.json_response({"ready": capcut_ready(project), "revision": project.get("revision")})
+            ready = capcut_ready(project)
+            return self.json_response({"ready": ready, "urls": capcut_ready_urls(project, ready), "revision": project.get("revision")})
         match = re.fullmatch(r"/api/projects/([0-9a-f]{24})/create-video", path)
         if match:
             return self.json_response(analysis_jobs.creation_status(store.load_project(match.group(1)), load_job))
@@ -2583,7 +2652,7 @@ class Handler(BaseHTTPRequestHandler):
             if body.get("channel_quality") is True and bitrate is None:
                 # the card's «Експортувати»: the quality the channel chose, as «Автоекспорт» exports
                 settings = store.read_channel_settings(store.get_channel_folder(project["channel_id"]), {}) or {}
-                quality = settings.get("video_quality") if settings.get("video_quality") in store.VIDEO_QUALITIES else "standard"
+                quality = "max" if settings.get("video_quality") == "max" else store.DEFAULT_VIDEO_QUALITY   # «Стандартна» is gone (26 November 2026)
                 bitrate = store.video_bitrates(int(project.get("width") or 1920), int(project.get("height") or 1080),
                                                int(project.get("fps") or 25))[store.VIDEO_QUALITIES.index(quality)]
             return self.json_response({"job": start_export(project, body.get("confirm_export") is True,

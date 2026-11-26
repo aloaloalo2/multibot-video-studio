@@ -156,8 +156,11 @@ GLOBAL_SETTINGS_PATH = DATA_ROOT / "settings.json"
 VIDEO_SIZES = {"1280x720": "HD", "1920x1080": "Full HD", "2560x1440": "2K", "3840x2160": "4K"}
 VIDEO_FPS = (24, 25, 30, 50, 60)
 VIDEO_QUALITIES = ("standard", "high", "max")
-# a channel that chose nothing: Full HD at 25 frames a second, standard quality (user, 1 November 2026)
-DEFAULT_VIDEO_SIZE, DEFAULT_VIDEO_FPS, DEFAULT_VIDEO_QUALITY = "1920x1080", 25, "standard"
+# «Висока» unless a channel chose otherwise (26 November 2026, «щоб експорт в мене був золотий»): at «Стандартна»,
+# 2 Mbit/s for Full HD, the host frames came out at 38.7 dB on average and 27.4 dB at worst against a 40 Mbit/s
+# render, at 8 Mbit/s 42.7 and 30.9; the dark animation scenes take less than the target either way.
+# a channel that chose nothing: Full HD at 25 frames a second (user, 1 November 2026)
+DEFAULT_VIDEO_SIZE, DEFAULT_VIDEO_FPS, DEFAULT_VIDEO_QUALITY = "1920x1080", 25, "high"
 VIDEO_BITRATES = {"1280x720": (1_000_000, 4_000_000, 6_000_000), "1920x1080": (2_000_000, 8_000_000, 12_000_000),
                   "2560x1440": (4_000_000, 14_000_000, 20_000_000), "3840x2160": (8_000_000, 32_000_000, 48_000_000)}
 

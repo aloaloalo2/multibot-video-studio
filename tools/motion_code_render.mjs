@@ -2,6 +2,10 @@
 // headless Chromium, on a transparent canvas.
 //   node tools/motion_code_render.mjs --spec clip.json --out clip.mov            HEVC with alpha (ProRes 4444 off the Mac), every frame
 //   node tools/motion_code_render.mjs --spec clip.json --stills 0.5,2,4 --out-dir D   PNG stills with alpha
+/* check:start */
+//   node tools/motion_code_render.mjs --spec clip.json --text-scan 0.5,2,4                the lines of text at each moment
+//   node tools/motion_code_render.mjs --spec clip.json --text-pairs 2,4 --out-dir D       stills with and without the text
+/* check:end */
 // clip.json: {code, width, height, fps, duration, words?}. Options: --studio URL, --modules DIR (a node_modules with
 // playwright, the Razgon kit's by default). Prints one JSON line {ok, frames|stills, error}; exit 1 on a code error.
 import fs from 'node:fs';
@@ -32,6 +36,36 @@ try {
   const compileError = await page.evaluate(s => window.motionInit(s), spec);
   if (compileError) throw new Error(compileError);
   const shot = () => page.screenshot({ type: 'png', omitBackground: true, clip: { x: 0, y: 0, width, height } });
+  /* check:start */
+  if (args['text-scan']) {
+    // the lines of text the clip shows at each moment (motion_text_check.py picks the moments to look at)
+    const moments = [];
+    for (const raw of String(args['text-scan']).split(',')) {
+      const t = Math.min(Math.max(0, Number(raw)), Math.max(0, Number(spec.duration) - 1 / fps));
+      const error = await page.evaluate(x => window.motionAt(x, { logText: true, hideText: true }), t);
+      if (error) throw new Error(`${t.toFixed(2)} с: ${error}`);
+      moments.push({ t, texts: await page.evaluate(() => window.motionTexts()) });
+    }
+    say({ ok: true, moments });
+  } else if (args['text-pairs']) {
+    // each moment twice: as drawn and with its letters left out, both PNG with alpha, and the lines of text drawn
+    const dir = path.resolve(args['out-dir']); fs.mkdirSync(dir, { recursive: true });
+    const pairs = [];
+    for (const raw of String(args['text-pairs']).split(',')) {
+      const t = Math.min(Math.max(0, Number(raw)), Math.max(0, Number(spec.duration) - 1 / fps));
+      const name = t.toFixed(2);
+      let error = await page.evaluate(x => window.motionAt(x, { logText: true }), t);
+      if (error) throw new Error(`${name} с: ${error}`);
+      const texts = await page.evaluate(() => window.motionTexts());
+      const withText = path.join(dir, `text-${name}.png`); fs.writeFileSync(withText, await shot());
+      error = await page.evaluate(x => window.motionAt(x, { hideText: true }), t);
+      if (error) throw new Error(`${name} с: ${error}`);
+      const without = path.join(dir, `bare-${name}.png`); fs.writeFileSync(without, await shot());
+      pairs.push({ t, with: withText, without, texts });
+    }
+    say({ ok: true, pairs });
+  } else
+  /* check:end */
   if (args.stills) {
     const dir = path.resolve(args['out-dir']); fs.mkdirSync(dir, { recursive: true });
     const stills = [];

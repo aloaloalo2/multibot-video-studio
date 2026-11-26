@@ -135,3 +135,35 @@ class RazgonWindowTest(unittest.TestCase):
             clip = manifest["timeline_layers"][0]["clips"][0]
             self.assertAlmostEqual(clip["start"], first)
             self.assertAlmostEqual(clip["start"] + clip["duration"], last)
+
+
+class CapcutReadyFilmTest(unittest.TestCase):
+    """Drawn seams are handed to the editor with their films, so it plays them at once, also after a restart; a seam
+    whose frames changed since is not (user, 26 November 2026: «переходи в прев'ю… моментально»)."""
+
+    def test_ready_films_survive_a_restart_and_follow_their_frames(self):
+        import tempfile
+        from unittest.mock import patch
+        import app
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'capcut-cache').mkdir()
+            film = root / 'capcut-cache' / ('transition-direct-capcut-' + 'a' * 24 + '.mp4')
+            film.write_bytes(b'x')
+            p = project()
+            joins.set_transition(p, dict(from_ref='group:g1', to_ref='group:g2', type='capcut_t06', duration=1.0))
+            join = p['join_transitions'][0]
+            url = '/api/capcut/media/' + film.name
+            with patch.object(store, 'DATA_ROOT', root), patch.object(store, 'project_dir', lambda pid: root / pid), \
+                 patch.dict(app.CAPCUT_READY, {}, clear=True), patch.dict(app.CAPCUT_URLS, {}, clear=True):
+                app.capcut_mark_ready('x', join, url, p)
+                ready = app.capcut_ready(p)
+                self.assertEqual(app.capcut_ready_urls(p, ready), {join['id']: url})
+                app.CAPCUT_READY.clear(); app.CAPCUT_URLS.clear()   # a restart: only the saved list is left
+                ready = app.capcut_ready(p)
+                self.assertEqual(app.capcut_ready_urls(p, ready), {join['id']: url})
+                p['tracks'][1]['clips'][0]['keyframes'] = [{'time': 0, 'scale': 1.1}]   # the frame after the seam moves now
+                self.assertEqual(app.capcut_ready_urls(p, app.capcut_ready(p)), {})
+                film.unlink()
+                app.CAPCUT_READY.clear(); app.CAPCUT_URLS.clear()
+                self.assertEqual(app.capcut_ready(p), [])   # its film gone, the seam is drawn again

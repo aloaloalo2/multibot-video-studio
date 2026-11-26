@@ -19,6 +19,8 @@ window.motionInit=async spec=>{
   return program.error||null;
 };
 window.motionAt=t=>MotionCode.paint(document.getElementById('motion'),clip.code,t,clip);
+/* check:start */window.motionAt=(t,flags)=>MotionCode.paint(document.getElementById('motion'),clip.code,t,flags?{...clip,...flags}:clip);
+window.motionTexts=()=>window.__motionTexts||[];/* check:end */
 </script>
 </body>
 </html>

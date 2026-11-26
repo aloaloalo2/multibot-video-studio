@@ -56,10 +56,22 @@ final class SequentialVideo {
     let outputFPS: Double
     var outputOffset: Double = 0
     var alphaFrameOffset: Int = 0
+    // HEVC with alpha written by FFmpeg's hevc_videotoolbox (the studio's motion-code renders) holds straight colour
+    // but is labelled premultiplied, and AVFoundation hands it over as such: Core Image then read every soft edge pixel
+    // at full brightness and letters got a ring of light dots in the export (26 November 2026, «що з якістю
+    // тексту?»). FFmpeg's own decoder, the CPU path, reads it as straight, so it is premultiplied here to match.
+    // ProRes 4444 comes out of AVFoundation premultiplied already and is left alone.
+    var straightAlpha = false
     init(_ path: String, _ start: Double, _ duration: Double, _ targetFPS: Double) throws {
         outputFPS = targetFPS
         let asset = AVURLAsset(url: URL(fileURLWithPath: path))
         guard let track = asset.tracks(withMediaType: .video).first else { throw NSError(domain:"GPUPrototype", code:1, userInfo:[NSLocalizedDescriptionKey:"Video stream unavailable: \(URL(fileURLWithPath:path).lastPathComponent)"]) }
+        if let description = track.formatDescriptions.first {
+            let format = description as! CMFormatDescription
+            let subtype = CMFormatDescriptionGetMediaSubType(format)
+            let alpha = (CMFormatDescriptionGetExtension(format, extensionKey: kCMFormatDescriptionExtension_ContainsAlphaChannel) as? Bool) ?? false
+            straightAlpha = alpha && (subtype == kCMVideoCodecType_HEVC || subtype == kCMVideoCodecType_HEVCWithAlpha || subtype == 0x68657631)   // hvc1, muxa, hev1
+        }
         sourceFPS = track.nominalFrameRate > 0 ? Double(track.nominalFrameRate) : 25
         reader = try AVAssetReader(asset: asset)
         let attrs: [String: Any] = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA, kCVPixelBufferMetalCompatibilityKey as String: true]
@@ -90,7 +102,7 @@ final class SequentialVideo {
             current = CMSampleBufferGetImageBuffer(sample)
             next = output.copyNextSampleBuffer()
         }
-        return current.map { CIImage(cvPixelBuffer: $0) }
+        return current.map { straightAlpha ? CIImage(cvPixelBuffer: $0).premultiplyingAlpha() : CIImage(cvPixelBuffer: $0) }
     }
 }
 

@@ -247,6 +247,17 @@ async function refreshCapcutReady(){
     const data=await api(`/api/projects/${encodeURIComponent(id)}/capcut-ready`);
     if(state.project?.id!==id)return;
     capcutDrawn=new Set(data.ready||[]);capcutReadyFor=id;markCapcutPending();
+    // seams the server has drawn already play at once, with no request of their own (user, 26 November 2026: «щоб
+    // моментально я міг їх просто подивитися»): the server hands out a film only while both frames are as drawn
+    let filled=false;
+    for(const join of state.project.join_transitions||[]){
+      const url=data.urls?.[join.id];if(!url||!isCapcutTransition(join.type))continue;
+      const key=capcutJoinKey(join),known=capcutPreviews.get(key);
+      if(known?.state==='ready')continue;
+      if(known)capcutWaiting.delete(key);
+      capcutPreviews.set(key,{state:'ready',url});filled=true;
+    }
+    if(filled&&!state.playing)renderPreview();
   }catch{}
   if(state.project?.id===id&&(state.project.join_transitions||[]).some(capcutPending))capcutReadyTimer=setTimeout(refreshCapcutReady,4000);
 }

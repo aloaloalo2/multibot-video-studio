@@ -202,6 +202,23 @@ function keyframePoints(clip,key,base){
   if(known.length&&known[0].time>1e-9)known.unshift({time:0,value:base});
   return own[slot]=known;
 }
+// The picture a motion-code clip pins its elements to (info.pin, info.onPhoto in motion-code.js): the largest picture of
+// its frame group, its blurred backing and accents left out; the same choice as motion_code.follow_of on the server.
+function codeFollow(clip){
+  const memo=codeFollow.memo||(codeFollow.memo=new WeakMap());
+  const project=state.project;if(!project)return null;
+  let own=memo.get(project);if(!own)memo.set(project,own=new Map());
+  if(own.has(clip.id))return own.get(clip.id);
+  const group=(project.scene_groups||[]).find(g=>(g.clip_ids||[]).includes(clip.id));
+  const clips=new Map((project.tracks||[]).flatMap(t=>t.clips||[]).map(c=>[c.id,c]));
+  let best=null,area=-1;
+  for(const id of group?.clip_ids||[]){
+    const c=clips.get(id),title=String(c?.title||'').toLowerCase();
+    if(!c||id===clip.id||!['image','video'].includes(c.kind)||c.content_type||c.frame_background||title.includes('чорний фон')||title.includes(' фон')||title.includes('акцент'))continue;
+    const size=Number(c.width??1)*Number(c.height??1);if(size>area+1e-9){area=size;best=c;}
+  }
+  own.set(clip.id,best);return best;
+}
 function keyframeValue(clip,key,base,local){
   const known=keyframePoints(clip,key,base);
   if(!known.length)return base;
@@ -410,7 +427,7 @@ function renderUniversalPreview(){
     renderMotionTrails(wrapper,clip,local,frameWidth,frameHeight);
     const gradientCanvas=wrapper._gradient;if(gradientCanvas)drawGradient(gradientCanvas,clip.gradient,local);
     const codeCanvas=wrapper._code;
-    if(codeCanvas&&window.MotionCode){const error=MotionCode.paint(codeCanvas,clip.code||'',Math.min(Math.max(0,local),Math.max(0,(Number(clip.duration)||0)-1/(Number(state.project?.fps)||25))),{duration:Number(clip.duration)||0,fps:Number(state.project?.fps)||25,words:clip.code_words||[],assets:codeAssetUrls(clip)});
+    if(codeCanvas&&window.MotionCode){const error=MotionCode.paint(codeCanvas,clip.code||'',Math.min(Math.max(0,local),Math.max(0,(Number(clip.duration)||0)-1/(Number(state.project?.fps)||25))),{duration:Number(clip.duration)||0,fps:Number(state.project?.fps)||25,words:clip.code_words||[],assets:codeAssetUrls(clip),follow:codeFollow(clip),self:clip});
       if(error!==codeCanvas._error){codeCanvas._error=error;wrapper.dataset.codeError=error||'';if(error)console.warn('Моушн-код «'+(clip.title||'')+'»: '+error);}}
     if(clip.content_type==='capcut_effect')syncCapcutEffect(wrapper,clip,local);
     const video=wrapper._video;

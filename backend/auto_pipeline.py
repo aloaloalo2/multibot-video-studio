@@ -126,7 +126,7 @@ def tick(start_export, active_export) -> list[str]:
                 project = None
             if project and store.plan_readiness(project).get("export_ready"):
                 request = project.get("production_request") or {}
-                quality = settings.get("video_quality") if settings.get("video_quality") in store.VIDEO_QUALITIES else "standard"
+                quality = "max" if settings.get("video_quality") == "max" else store.DEFAULT_VIDEO_QUALITY   # «Стандартна» is gone (26 November 2026)
                 choices = store.video_bitrates(int(project.get("width") or 1920), int(project.get("height") or 1080), int(project.get("fps") or 25))
                 store.atomic_json(folder / "auto-export.json", {"request": request.get("id"), "at": time.time()})
                 try:
