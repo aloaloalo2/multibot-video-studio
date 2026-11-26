@@ -3482,3 +3482,8 @@ select option{background:#232327;color:#f1f1f2}
 .composition-main-tab[hidden]{display:none!important}
 /* the studio's frame lines, #303034 before, are 40% darker everywhere (#1d1d1f; user, 26 November 2026: «на 40%… темнішу…
    всій студії») and stay around the montage's left column in every state */
+/* «Попросити Claude змінити ролик»: a quiet mark, not a lit disc (user, 26 November 2026: «не гарно») */
+.timeline-toolbar .claude-ask-button,.claude-ask-button{width:24px;height:24px;min-width:24px;min-height:0;padding:0;border:0;border-radius:7px;background:transparent;box-shadow:none;margin-left:2px}
+.timeline-toolbar .claude-ask-button svg,.claude-ask-button svg,.claude-ask-button svg path{width:13px;height:13px;fill:#8d909a;transition:fill .15s}
+.timeline-toolbar .claude-ask-button:hover:not(:disabled),.claude-ask-button:hover{background:#ffffff0d;border:0;box-shadow:none}
+.claude-ask-button:hover svg,.claude-ask-button:hover svg path{fill:#d97757}
