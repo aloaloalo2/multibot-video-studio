@@ -1419,3 +1419,7 @@ The user: «Аватар 3… застиглі моменти, якщо… ти�
 ## Host graphics show, they do not repeat (26 November 2026)
 
 The user: «не сильно текст повторювати… краще показати щось, те, що він там озвучує… лаконічно і інформативно… щоб не нагружало і не відволікало від того, що він сказав». The motion graphics over the host (`motion_direction.HOST_GRAPHICS`) show what he talks about instead of writing out the phrase, names or list the viewer has just heard: the largest stars drawn side by side rather than «Стівенсон 2-18, UY Щита…»; a caption only where the picture needs it, a word or two or a number; one idea at a time, few elements, calm motion.
+
+## A still never leaks its CapCut window into an export (26 November 2026)
+
+The user: «експорт відрізняється в переходах… взагалі нема переходів». `engine/still.py` set `STUDIO_CAPCUT_WINDOW` in `os.environ` and never removed it; the frame review draws its stills inside the studio's own process (`native_review.render_row`), so the window stayed there, and the next export, started from that process, treated every CapCut seam outside it as unseen (`capcut_fx._in_window`) and drew a plain cut: Astrofizika's v1 lost 16 of its 23 CapCut transitions while crossfades and cinematic ones came out whole. `still()` now restores the variable after drawing, and an export's environment drops `STUDIO_CAPCUT_WINDOW` and `STUDIO_GPU_WINDOW_START` (`app.STILL_ONLY_ENV`). Test: `engine/tests/test_still_env.py`.

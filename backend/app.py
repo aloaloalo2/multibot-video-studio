@@ -622,7 +622,8 @@ def _render_worker(job: dict, render_manifest: Path, staging: Path, destination:
             if entry['cancel']:
                 return
             # the engine's render cache lives with the episode (next to its renders/), so it goes with the episode folder
-            env = {**os.environ, "MULTIBOT_RENDER_CACHE": str(render_manifest.parent.parent / "render-cache")}
+            # an export never draws a still's window: a CapCut window left over in this process drew every other seam as a cut
+            env = {**{k: v for k, v in os.environ.items() if k not in STILL_ONLY_ENV}, "MULTIBOT_RENDER_CACHE": str(render_manifest.parent.parent / "render-cache")}
             process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True, env=env)
             entry['process'] = process
         def terminate_group():
@@ -1125,6 +1126,9 @@ def recent_exports(pid: str, limit: int = 5) -> list[dict]:
             if len(found) >= limit:
                 break
     return found
+
+
+STILL_ONLY_ENV = {"STUDIO_CAPCUT_WINDOW", "STUDIO_GPU_WINDOW_START"}   # set only for a still, never handed to an export
 
 
 def export_still(project: dict, moment: float, frames: int = 1, cpu: bool = False) -> dict:

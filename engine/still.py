@@ -58,6 +58,20 @@ def _cpu(project: dict, project_file: Path, work: Path, start: float, end: float
 
 
 def still(project_file: Path, moment: float, output: Path, frames: int = 1, cpu: bool = False) -> dict:
+    """The still, with its CapCut window set only while it is drawn: called inside the studio's own process (the frame
+    review), the window used to stay in the environment, and the next export started from that process drew every CapCut
+    seam outside it as a plain cut (26 November 2026)."""
+    before = os.environ.get("STUDIO_CAPCUT_WINDOW")
+    try:
+        return _still(project_file, moment, output, frames, cpu)
+    finally:
+        if before is None:
+            os.environ.pop("STUDIO_CAPCUT_WINDOW", None)
+        else:
+            os.environ["STUDIO_CAPCUT_WINDOW"] = before
+
+
+def _still(project_file: Path, moment: float, output: Path, frames: int = 1, cpu: bool = False) -> dict:
     began = time.monotonic()
     project = json.loads(project_file.read_text(encoding="utf-8"))
     width, height, fps = int(project.get("width", 1920)), int(project.get("height", 1080)), int(project.get("fps", 30))
