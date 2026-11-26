@@ -315,7 +315,9 @@ def instructions(project, *, scoped=False, include_workflow=True):
 # white burst called «Спотворення прискорення» took a glitch sound, user: «перехід, який не мечиться з звуком гліч. Ніколи
 # їх не мечі»). A transition not listed moves (a slide, a turn, a cube, a door, a zoom).
 TRANSITION_CHARACTER = {
-    "crossfade": "soft", "capcut_t10": "soft", "capcut_t23": "soft", "capcut_t25": "soft", "capcut_t34": "soft",
+    # «Пиловий вихор» (capcut_t23) is no soft one: its 2 s whirl pressed into a 0.7 s seam swirls with drive (user, 26
+    # November 2026, Andromeda 83→84: «на ведучому не може появлятися. Це драйвовий перехід»), so it moves
+    "crossfade": "soft", "capcut_t10": "soft", "capcut_t25": "soft", "capcut_t34": "soft",
     "capcut_t08": "glitch",   # a film-burn flash with a grainy double exposure; the author hears it as a glitch (25 November 2026)
     "capcut_t17": "glitch", "capcut_t24": "glitch", "capcut_t29": "glitch", "capcut_t31": "glitch",
     "capcut_t03": "flash", "capcut_t04": "flash", "capcut_t06": "flash", "capcut_t07": "flash", "capcut_t12": "flash", "capcut_t13": "flash",
