@@ -3480,5 +3480,5 @@ select option{background:#232327;color:#f1f1f2}
 .music-track.active .music-track-time{color:#d5d8df}
 .timeline-toolbar .timeline-zoom,.timeline-toolbar .timeline-zoom button{height:24px}
 .composition-main-tab[hidden]{display:none!important}
-/* no frame around the montage's left column, whatever it shows (user, 26 November 2026: «бордер… скрізь») */
-#editor-production{border:0}
+/* the script while Opus writes it: no frame around the whole column (user, 26 November 2026: «тут окно ціле… бордер») */
+#editor-production:has(> .episode-draft-panel){border:0}
