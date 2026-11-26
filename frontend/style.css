@@ -3478,3 +3478,5 @@ select option{background:#232327;color:#f1f1f2}
 .music-seek{flex:0 0 auto!important;width:calc(100% - 44px)!important;min-width:0!important;box-sizing:border-box;margin:0 12px 6px 32px!important;height:12px;padding:0!important}
 .music-track.active{background:#ffffff0a}
 .music-track.active .music-track-time{color:#d5d8df}
+.timeline-toolbar .timeline-zoom,.timeline-toolbar .timeline-zoom button{height:24px}
+.composition-main-tab[hidden]{display:none!important}

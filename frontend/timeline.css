@@ -35,7 +35,7 @@
 @media(max-width:560px){.editor-open .project-views{padding-inline:30px}}
 .editor-open .project-views button{border:0;border-radius:12.5px 12.5px 0 0;background:#1e1e23;color:#b8b8c0;padding:7px 15px;min-width:137px;height:32px;}
 .editor-open .project-views button.active{background:#35353c;color:#f4f4f6;}
-#composition-tabs{align-self:flex-end;align-items:stretch;padding:0 8px;margin-bottom:-1px;height:30px;}
+#composition-tabs{align-self:flex-end;align-items:stretch;padding:0 8px;margin-bottom:-1px;height:25px;}
 #composition-tabs .composition-tab-wrap{border-radius:12.5px 12.5px 0 0!important;position:relative;margin:0;}
 #composition-tabs button.composition-tab{border-radius:12.5px 12.5px 0 0!important;height:100%;min-height:0;background:transparent!important;box-shadow:none!important;}
 #composition-tabs .composition-tab-wrap:has(.active){background:#1b1b20;}
@@ -50,7 +50,7 @@
 .transition-join.join-drop{opacity:1;background:#f3cc72;border-color:#fff2c7;}
 .transition-join.selected-transition{opacity:1;background:#ffd15b;border-color:#fff4cc;box-shadow:0 0 0 2px #c8922e;}
 .transition-chip{border-radius:6.5px;background:linear-gradient(135deg,#4b4652,#25252c);min-height:48px;border:1px solid #57515c;color:#e6e0e9;cursor:grab;}
-.timeline-toolbar{min-height:36px;height:36px;padding:3px 10px;gap:8px;flex-wrap:nowrap;overflow:visible;}
+.timeline-toolbar{min-height:28px;height:28px;padding:1px 10px;gap:8px;flex-wrap:nowrap;overflow:visible;}   /* slimmer, 26 November 2026: «зроби це вужче» */
 .timeline-toolbar h2{font-size:11px;margin:0 4px 0 0;flex-basis:auto;white-space:nowrap;}
 .timeline-toolbar button{font-size:10px;padding:3px 6px;min-height:23px;}
 .timeline-toolbar .timeline-spacer{display:none;}
