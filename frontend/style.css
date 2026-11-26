@@ -3450,3 +3450,21 @@ select option{background:#232327;color:#f1f1f2}
 .music-track .check small{color:var(--muted,#999da8);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .music-track-time{flex-shrink:0;color:var(--muted,#999da8);font-size:12px;font-variant-numeric:tabular-nums}
 .music-track .check input:disabled~span,.music-track .check input:disabled~small{opacity:.5}
+/* Sound: three quiet rows, a switch each, the row opens to its list (26 November 2026) */
+.settings-sound .sound-row{position:relative;border-bottom:1px solid #ffffff0d}
+.settings-sound .sound-row:last-child{border-bottom:0}
+.settings-sound .sound-row .channel-sound-group{border:0;padding:14px 0}
+.settings-sound .sound-row .channel-sound-group summary{padding-right:56px;font-weight:600}
+.settings-sound .sound-row .channel-sound-group summary small{margin-right:4px}
+.settings-sound .sound-switch{position:absolute;top:15px;right:0}
+.settings-sound .sound-switch span{width:32px;height:18px}
+.settings-sound .sound-switch span:after{width:14px;height:14px}
+.settings-sound .sound-switch input:checked+span:after{transform:translateX(14px)}
+.settings-sound .sound-switch input:disabled+span{opacity:.4}
+.settings-sound .sound-row .channel-sound-group[open]{padding-bottom:16px}
+.settings-sound .sound-row .channel-sound-group>div{margin-top:12px}
+.settings-sound .sound-off{opacity:.45}
+.settings-sound .sound-switch span{background:#3a3b42}
+.settings-sound .sound-switch span:after{background:#8d909a}
+.settings-sound .sound-switch input:checked+span{background:#cfd1d7}
+.settings-sound .sound-switch input:checked+span:after{background:#24252b}

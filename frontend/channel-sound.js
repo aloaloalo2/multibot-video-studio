@@ -1,27 +1,27 @@
 function channelSoundMarkup(){
+  // three rows with a switch each and nothing to read (user, 26 November 2026: «просто хай будуть перемикачі… мінімалістичніше…
+  // без оцих пояснювань»); a row opens to its list
+  const sw=(id,label,extra='')=>`<label class="logo-switch sound-switch"><input id="${id}" type="checkbox" role="switch" aria-label="${label}"${extra}><span aria-hidden="true"></span></label>`;
   return `<section class="settings-section settings-sound"><h3 hidden>Музика й ефекти</h3>
-    <div class="channel-sound-music">
-      <div><label class="check"><input id="sound-music" type="checkbox">Генерувати фонову музику</label>
-      <label class="check channel-sound-generate" hidden><input id="sound-generate" type="checkbox"></label>
-      <small id="sound-music-note"></small></div>
-      <div class="channel-music-styles" id="music-styles" hidden><div class="channel-sound-categories"></div></div>
+    <div hidden><input id="sound-generate" type="checkbox"><span class="channel-sound-generate"></span><small id="sound-music-note"></small>
+      <div class="channel-music-styles" id="music-styles"><div class="channel-sound-categories"></div></div>
+      <input id="sound-effects" type="checkbox"><input id="sound-library" type="checkbox"><small id="sound-effect-count"></small><small id="sound-library-count"></small></div>
+    <div class="sound-row">
+      <details class="channel-sound-group channel-sound-music-library"><summary><span>Музика</span><small id="music-library-count"></small></summary>
+        <div id="music-library" class="channel-music-library"></div>
+      </details>${sw('sound-music','Музика')}
     </div>
-    <details class="channel-sound-group channel-sound-music-library"><summary><span>Музична бібліотека</span><small id="music-library-count"></small></summary>
-      <p class="channel-sound-note">Позначені треки чергуються між роликами й потрапляють в опис.</p>
-      <div id="music-library" class="channel-music-library"></div>
-    </details>
-    <details class="channel-sound-group channel-sound-sfx"><summary><span>SFX</span><small id="sound-sfx-count"></small></summary>
-      <label class="check"><input id="sound-sfx" type="checkbox">Використовувати SFX</label>
-      <input id="sound-effects" type="checkbox" hidden><input id="sound-library" type="checkbox" hidden><small id="sound-effect-count" hidden></small><small id="sound-library-count" hidden></small>
-      <p class="channel-sound-note">Звуки на появу, кліки й текст, до 4 с.</p>
-      <div id="sound-categories" class="channel-sound-categories"></div>
-      <div id="animation-sfx-library" class="channel-sound-categories"></div>
-    </details>
-    <details class="channel-sound-group regular-only"><summary><span>Звуки переходів</span><small id="sound-transition-count"></small></summary>
-      <label class="check"><input id="sound-transitions" type="checkbox" disabled>Використовувати на стиках</label>
-      <div id="transition-categories" class="channel-sound-categories"></div>
-      <p class="channel-sound-note">Режисер обирає доречні переходи й чергує позначені звуки. М’які склейки переважно залишаються тихими.</p>
-    </details>
+    <div class="sound-row">
+      <details class="channel-sound-group channel-sound-sfx"><summary><span>SFX</span><small id="sound-sfx-count"></small></summary>
+        <div id="sound-categories" class="channel-sound-categories"></div>
+        <div id="animation-sfx-library" class="channel-sound-categories"></div>
+      </details>${sw('sound-sfx','SFX')}
+    </div>
+    <div class="sound-row regular-only">
+      <details class="channel-sound-group"><summary><span>Звуки переходів</span><small id="sound-transition-count"></small></summary>
+        <div id="transition-categories" class="channel-sound-categories"></div>
+      </details>${sw('sound-transitions','Звуки переходів',' disabled')}
+    </div>
   </section>`;
 }
 // The sound catalogue is the same for every channel and only changes with a studio update: one read per page,
@@ -62,20 +62,20 @@ function bindChannelSound(saved){
     root.querySelector('#sound-music-note').textContent=music.checked?'Своя музика для кожного ролика.':'Без фонової музики.';
     const ticked=[...root.querySelectorAll('#music-library input:checked')].map(input=>input.value);
     root.soundValue.music={enabled:music.checked,generate:music.checked,...(root.musicLibraryReady?{tracks:ticked}:saved?.music?.tracks?{tracks:[...saved.music.tracks]}:{})};
-    const libraryGroup=root.querySelector('.channel-sound-music-library');libraryGroup.hidden=!music.checked;
-    if(root.musicLibraryReady)root.querySelector('#music-library-count').textContent=`${ticked.length} з ${root.querySelectorAll('#music-library input').length}`;
+    if(root.musicLibraryReady)root.querySelector('#music-library-count').textContent=music.checked?`${ticked.length} з ${root.querySelectorAll('#music-library input').length}`:'';
+    root.querySelector('#music-library').classList.toggle('sound-off',!music.checked);
     styles.hidden=true;
     for(const group of groups){
       const inputs=[...group.list.querySelectorAll('input')],selected=inputs.filter(i=>i.checked);
       inputs.forEach(input=>input.disabled=!group.toggle.checked||(group.key==='library'&&!root.librarySoundsReady));
       group.list.hidden=!group.toggle.checked;
-      group.count.textContent=!group.toggle.checked?'Вимкнено':inputs.length?`Обрано: ${selected.length}`:'';
+      group.count.textContent=group.toggle.checked&&inputs.length?`${selected.length} з ${inputs.length}`:'';
       root.soundValue[group.key].enabled=group.toggle.checked;
       if(group.key==='effects')root.soundValue.effects.version=2;   // today's SFX list: an unticked new sound stays unticked
       if(inputs.length)root.soundValue[group.key][group.field]=[...selected.map(i=>i.value),...(group.unavailableChoices||[])];
     }
     const sfxInputs=[...root.querySelectorAll('#sound-categories input,#animation-sfx-library input')];
-    root.querySelector('#sound-sfx-count').textContent=!root.querySelector('#sound-sfx').checked?'Вимкнено':sfxInputs.length?`Обрано: ${sfxInputs.filter(i=>i.checked).length}`:'';
+    root.querySelector('#sound-sfx-count').textContent=root.querySelector('#sound-sfx').checked&&sfxInputs.length?`${sfxInputs.filter(i=>i.checked).length} з ${sfxInputs.length}`:'';
   }
   // one SFX switch for the synthesized sounds and the files (user, 21 November 2026: «ефекти акцентів це те саме, що SFX
   // для анімації… розділяти не потрібно»)
