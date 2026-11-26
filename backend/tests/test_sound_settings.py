@@ -179,6 +179,21 @@ class SoundSettingsTest(unittest.TestCase):
         seams = {(a['payload']['from_ref'], a['payload']['to_ref']) for a in ctx.actions if a['type'] == 'set_join_transition'}
         self.assertIn(('group:2', 'group:3'), seams)
 
+    def test_the_way_into_the_host_is_a_plain_dissolve_whatever_the_channel_ticked(self):
+        # user, 26 November 2026, Andromeda 83→84: «Пиловий вихор», then «Райдужний фільтр» swirled and tinted the host:
+        # «знову драйвовий»
+        frames = [{'number': n, 'start': (n - 1) * 5, 'end': n * 5, 'group': {'id': str(n)}, 'clips': [],
+                   'plan': {'format': 'host' if n in (3, 6) else 'razgon_2d'}} for n in range(1, 8)]
+        for every in (False, True):
+            ctx = SimpleNamespace(project={'id': 'a' * 24, 'fps': 25, 'tracks': [], 'join_transitions': []}, frames=frames,
+                                  plan=None, actions=[], report=[], asset_for=lambda p: p.name)
+            with patch.object(montage_ops, 'channel_transitions', return_value={'allowed': ['capcut_t23', 'capcut_t34', 'capcut_t03', 'capcut_t05']}), \
+                 patch.object(soundtrack, 'transitions'), patch.object(soundtrack, 'typing'):
+                montage_ops.transitions(ctx, {'share': 1.0, **({'every': True} if every else {})})
+            into = {a['payload']['to_ref']: a['payload']['type'] for a in ctx.actions if a['type'] == 'set_join_transition'}
+            self.assertEqual(into.get('group:3'), 'crossfade')
+            self.assertEqual(into.get('group:6'), 'crossfade')
+
     def test_the_host_sounds_only_where_he_goes_out_and_a_cut_never(self):
         frames = [{'number': n, 'start': (n - 1) * 5, 'end': n * 5, 'group': {'id': str(n)},
                    'plan': {'format': 'host' if n == 2 else 'razgon_2d'}} for n in range(1, 5)]

@@ -1390,6 +1390,7 @@ def compose_text(ctx: Context, spec: dict) -> None:
             ctx.report.append(f"кадр {frame['number'] or frame['group']['title']}: текст зібрано по центру")
 
 
+HOST_IN = "crossfade"   # the one way into the host frame: a plain dissolve (26 November 2026)
 OUT_ONLY = {"capcut_t30"}   # «Розрізання й панорама»: the host's way out or a seam between other frames only
 
 
@@ -1522,7 +1523,9 @@ def transitions(ctx: Context, spec: dict) -> None:
         # either side of a text frame (user, 25 November 2026, «Розрізання й панорама» out of a text frame: «ніколи не
         # використовуй такий перехід… для показа диктора і… текстових вставок. Це більше як out»)
         bright = lambda t: (dark and sound_settings.transition_character(t) == "flash") or ((dark or into_host) and t in OUT_ONLY)
-        fresh = [t for t in unused if t != previous and (not host_out or t not in soft) and (not host_in or t in soft)
+        # into the host only a plain dissolve: every CapCut «soft» one still swirls, melts or tints his face (user, 26
+        # November 2026, Andromeda 83→84, «Пиловий вихор», then «Райдужний фільтр»: «знову драйвовий»)
+        fresh = [t for t in unused if t != previous and (not host_out or t not in soft) and not host_in
                  and keeps_shape(t, room) and not bright(t)] if every else []
         if fresh:
             kind = fresh[0]
@@ -1542,7 +1545,7 @@ def transitions(ctx: Context, spec: dict) -> None:
                       [t for t in kinds if t != previous] or list(kinds)
             hard = [t for t in options if t not in soft]
             calm = [t for t in softs if (t != previous or t == "crossfade") and keeps_shape(t, room)]
-            kind = rnd.choice(calm) if calm and (host_in or not hard or rnd.random() < .2) else rnd.choice(hard or options)
+            kind = HOST_IN if host_in else rnd.choice(calm) if calm and (not hard or rnd.random() < .2) else rnd.choice(hard or options)
         duration = float(spec.get("duration", natural(kind)))
         if host_out:
             duration = min(duration, HOST_OUT)   # quick, with drive
