@@ -1327,3 +1327,7 @@ The «Музична бібліотека» list is one column, a track a row: t
 The channel's sound settings are three quiet rows, «Музика», «SFX» and «Звуки переходів», each with a grey switch on its right and «N з M» while on; a row opens to its list, and the switch does not open it (user, 26 November 2026: «просто хай будуть перемикачі… мінімалістичніше… делікатніше… без оцих пояснювань»). No notes under them. «Музика» on is the channel's music (the ticked library tracks, else the generated score); its list is the music library.
 
 «Розбиття сценарію» («Коротке речення, до N слів») left the channel settings (user, 26 November 2026). It only fed the mechanical sentence grouping of `planner.group_sentences`, and every plan's frames now come from the director, who groups whole sentences by meaning. Saved `short_sentence_words` values stay as they are, and the planner keeps its default of 5.
+
+## The host's zoom order is each film's own (26 November 2026)
+
+The user: «зум чи не зум… уникализовувати, але перший кадр точно наближатись». The first host frame of a film always zooms in. The others zoom in or out in an order of that film's own (`host_from_voice.host_directions`, seeded by the project id): the same each time the film is made, different between films, never three alike in a row. Every host frame still moves. How far it zooms still follows its length (`heygen_frames.zoom_percent`, 2–15%). `heygen_frames.host_zoom` and `host_from_voice.place` share this order. Films already made keep their zooms.

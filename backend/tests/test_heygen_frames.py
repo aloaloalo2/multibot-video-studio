@@ -283,6 +283,7 @@ class HeyGenFramesTest(unittest.TestCase):
             self.assertEqual([(round(a, 3), round(b, 3)) for a, b in cuts], [(0.0, 1.4), (1.0, 3.8)])
 
     def test_host_frames_zoom_in_and_out_in_turn_by_their_length(self):
+        # the first host frame zooms in; the order of the rest is the film's own (test_host_zoom_order_is_the_films_own)
         plan = {'frames': [{'number': 1, 'format': 'razgon_2d', 'start': 0, 'end': 4},
                            {'number': 2, 'format': 'host', 'start': 4, 'end': 5},
                            {'number': 3, 'format': 'razgon_2d', 'start': 5, 'end': 9},
@@ -290,8 +291,17 @@ class HeyGenFramesTest(unittest.TestCase):
                            {'number': 5, 'format': 'host', 'start': 14, 'end': 30}]}
         frames = {f['number']: f for f in plan['frames']}
         self.assertEqual(heygen_frames.host_zoom(plan, frames[2]), ('zoom_in', 2.0))     # one second: at least 2%
-        self.assertEqual(heygen_frames.host_zoom(plan, frames[4]), ('zoom_out', 7.5))    # five seconds: 1.5 points less
-        self.assertEqual(heygen_frames.host_zoom(plan, frames[5]), ('zoom_in', 15.0))    # long: 15% stays
+        self.assertEqual(heygen_frames.host_zoom(plan, frames[4])[1], 7.5)    # five seconds: 1.5 points less
+        self.assertEqual(heygen_frames.host_zoom(plan, frames[5])[1], 15.0)   # long: 15% stays
+
+    def test_host_zoom_order_is_the_films_own(self):
+        import host_from_voice
+        orders = {seed: host_from_voice.host_directions(seed, 12) for seed in ('a' * 24, 'b' * 24, 'c' * 24, 'd' * 24)}
+        for moves in orders.values():
+            self.assertEqual(moves[0], 'zoom_in')                                   # the film opens coming in
+            self.assertFalse(any(moves[i] == moves[i + 1] == moves[i + 2] for i in range(10)))
+        self.assertGreater(len({tuple(m) for m in orders.values()}), 1)             # films differ
+        self.assertEqual(host_from_voice.host_directions('a' * 24, 12), orders['a' * 24])   # one film stays the same
 
 
 if __name__ == '__main__':

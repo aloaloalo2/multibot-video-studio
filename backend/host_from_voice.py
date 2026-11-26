@@ -7,6 +7,8 @@ is the same recording. It runs before the frame agent, so the agent sees those f
 no tokens; frames already on the timeline are left as they are."""
 from __future__ import annotations
 
+import hashlib
+import random
 import json
 import math
 from pathlib import Path
@@ -49,6 +51,30 @@ def voice_video(project: dict, plan: dict | None) -> dict | None:
     return asset
 
 
+MOVES = ("zoom_in", "zoom_out")
+
+
+def host_directions(seed: str, count: int) -> list[str]:
+    """The zoom of each host frame in its film's order (user, 26 November 2026: «зум чи не зум… уникализовувати, але
+    перший кадр точно наближатись»): the first comes in, the others go in or out in an order of this film's own, the same
+    every time the film is made and never three alike in a row."""
+    rng = random.Random(int(hashlib.sha256(f"{seed}|host-zoom".encode()).hexdigest()[:16], 16))
+    moves = ["zoom_in"][:max(0, count)]
+    while len(moves) < count:
+        pick = rng.choice(MOVES)
+        if len(moves) >= 2 and moves[-1] == moves[-2] == pick:
+            pick = MOVES[1 - MOVES.index(pick)]
+        moves.append(pick)
+    return moves
+
+
+def host_move(seed: str, plan: dict | None, number: int) -> str:
+    """The zoom of plan frame `number`, counted along the film's host frames."""
+    hosts = [int(f.get("number") or 0) for f in (plan or {}).get("frames", []) if f.get("format") == "host"]
+    index = hosts.index(number) if number in hosts else 0
+    return host_directions(seed, index + 1)[index]
+
+
 def place(pid: str, redo: bool = False) -> list[int]:
     """Put the voice video into every host frame not made yet; returns the frame numbers placed. `redo` takes off
     host frames made otherwise (a picture drawn of the host before this existed) and puts the video in their place."""
@@ -73,9 +99,9 @@ def place(pid: str, redo: bool = False) -> list[int]:
         # (start above is the same whole-frame edge montage_ops.place gives the clip: picture and voice on one second)
         if number in made:
             removed.append({"op": "remove", "frame": number})
-        # the host's slow 12% zoom, in and out by turns (the channels' rule: a host frame zooms 10-15%)
+        # the host's slow 12% zoom; the first host frame comes in, the rest in this film's own order (host_directions)
         ops.append({"op": "place", "frame": number, "asset_id": asset["id"], "trim_start": start,
-                    "motion": "zoom_in" if len(ops) % 2 == 0 else "zoom_out"})
+                    "motion": host_move(pid, plan, number)})
     if not ops:
         return []
     if removed:

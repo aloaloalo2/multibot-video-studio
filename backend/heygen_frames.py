@@ -557,7 +557,7 @@ def _place(pid, request, job):
         asset = store.import_asset_file(project, output, 'heygen')
         record['asset_id'] = asset['id']
         store.atomic_json(receipt, record)
-    move, percent = host_zoom(store.load_project_plan(pid), frame)
+    move, percent = host_zoom(store.load_project_plan(pid), frame, pid)
     montage_ops.run(pid, [{'op': 'place', 'frame': frame['number'], 'asset_id': asset['id'], 'trim_start': float(record.get('head') or 0),
                            'motion': move, 'zoom_percent': percent}])
 
@@ -572,8 +572,7 @@ def zoom_percent(seconds):
     return round(max(2.0, base - cut), 2)
 
 
-def host_zoom(plan, frame):
-    """The host frame's move: zoom in and zoom out in turn along the film's host frames, by its length."""
-    hosts = [f['number'] for f in (plan or {}).get('frames', []) if f.get('format') == 'host']
-    index = hosts.index(frame['number']) if frame['number'] in hosts else 0
-    return ('zoom_in' if index % 2 == 0 else 'zoom_out'), zoom_percent(float(frame['end']) - float(frame['start']))
+def host_zoom(plan, frame, seed=''):
+    """The host frame's move: the first host frame zooms in, the others in the film's own order (seed: the project id,
+    host_from_voice.host_directions); how far by its length."""
+    return host_from_voice.host_move(seed, plan, frame['number']), zoom_percent(float(frame['end']) - float(frame['start']))
