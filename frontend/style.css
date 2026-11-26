@@ -780,7 +780,7 @@ button.danger:hover:not(:disabled){background:#523034}
 .app-shell{padding:12px;gap:12px;background:#0b0b0c}
 .sidebar{background:transparent;border:0;border-radius:var(--ui-radius-dialog);padding:0 11px 14px;overflow:visible}
 .sidebar>.brand{border-bottom:0;height:62px}
-.topbar{background:transparent;border:0;border-bottom:1px solid #2c2c31;border-radius:0;height:62px;margin-bottom:12px}
+.topbar{background:transparent;border:0;border-bottom:1px solid #1a1a1d;border-radius:0;height:62px;margin-bottom:12px}
 .app-shell.editor-open{padding-top:0}
 .editor-open .topbar{min-height:62px;margin-inline:-12px;padding-inline:31px}
 /* Home and editor share one header origin and logo center. */
