@@ -60,6 +60,8 @@ CRITERIA = [
     'A thing mentioned before it is said what it is; the same property later named by other words that change the claim («менее плотно» then «вещества меньше»); a verb without its object; a grammatically incomplete sentence',
     'The central concept of the topic never explained once so that it cannot be confused with a similar one («менее плотно» heard as «меньше вещества»); inverted word order («часть газа чёрная дыра выбрасывает»); a simplification that turns a fact false; an ending that contradicts or weakens the host\'s conclusion',
     'A conclusion or «if…, then…» that does not follow from the facts just given, or that claims more than a future test can show',
+    # the author, 26 November 2026: «без тавтології хай пише»
+    'Tautology: the same word or a word of the same root twice in one sentence or in neighbouring sentences, one thought said twice in other words, pleonasms where the second word is already in the first («свободная вакансия», «вернулся обратно»); fix by rebuilding the sentence or a pronoun, never by cycling synonyms, and keep one name for one thing',
     # the author, 26 November 2026: «давати інформацію не банальну… аутентичності треба додавати»
     'Paragraphs made only of what everyone already knows about the topic (common_knowledge), an opening or ending resting on it, no behind-the-scenes detail of who found it, how it was observed or measured, what was believed before or what is still disputed',
     'No position of the host: fewer than two views of his own a reasonable person could dispute, each argued from the facts just given, or no honest place where he says he is not sure and why; views contradicting host_views_before without saying why',

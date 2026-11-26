@@ -459,11 +459,12 @@ class AuthenticityTest(unittest.TestCase):
 
     def test_brief_asks_for_common_knowledge_behind_the_scenes_and_views(self):
         brief = ideas.writer_brief({})
-        for words in ('common_knowledge', 'host_views', 'хто, коли і як це насправді відкрив', 'чесне місце'):
+        for words in ('common_knowledge', 'host_views', 'хто, коли і як це насправді відкрив', 'чесне місце', 'Без тавтології'):
             self.assertIn(words, brief)
         import script_editing
         self.assertTrue(any('common_knowledge' in c for c in script_editing.CRITERIA))
         self.assertTrue(any('host_views_before' in c for c in script_editing.CRITERIA))
+        self.assertTrue(any(c.startswith('Tautology') for c in script_editing.CRITERIA))
 
     def test_host_views_are_kept_per_channel_newest_last_and_bounded(self):
         import tempfile
