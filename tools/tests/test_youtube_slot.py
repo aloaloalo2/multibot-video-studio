@@ -57,3 +57,10 @@ class MonetizationTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MidnightSlotTest(unittest.TestCase):
+    def test_late_evening_rolls_over_to_tomorrows_midnight(self):
+        from datetime import datetime
+        import youtube_publish
+        self.assertEqual(youtube_publish.slot("2026-11-25", now=datetime(2026, 11, 26, 23, 26)), {"date": "2026-11-27", "time": "00:00"})

@@ -161,7 +161,8 @@
       for (;;) {
         const line = text(document.querySelector('ytcp-video-upload-progress'));
         // only the upload's own percentage: «Проверка: 13 %» after it is YouTube's copyright check, the file is up by then
-        const uploading = /(Загрузка|Загружается|Завантаження|Uploading|Upload)[^%]{0,30}\d+\s*%/i.test(line);
+        // «Загружено: 34 %» too (26 November 2026: it read the upload as finished at 70%)
+        const uploading = /(Загрузка|Загружается|Загружено|Завантаження|Завантажено|Uploading|Uploaded|Upload)[^%]{0,30}\d+\s*%/i.test(line);
         if (!uploading) return { ok: true, progress: line.slice(0, 120) };
         if (Date.now() > end) return { ok: false, still_uploading: true, progress: line.slice(0, 120), next: 'call waitUpload() again; do not leave the page' };
         await sleep(5000);
@@ -260,11 +261,15 @@
     async finish() {
       const done = document.querySelector('#done-button');
       if (!done) return { ok: false, error: 'no schedule button' };
+      const formId = ([...document.querySelectorAll('ytcp-uploads-dialog a')].map(a => a.href).join(' ').match(/youtu\.be\/([\w-]{11})/) || [])[1] || null;
       done.click();
       // only the confirmation window counts: the upload form shows the video's link from the start, so a link alone
-      // proved nothing (19 November 2026: «Эти галактики» stayed a draft)
-      const shared = await until(() => [...document.querySelectorAll('ytcp-video-share-dialog')].find(shown), 30000);
+      // proved nothing (19 November 2026: «Эти галактики» stayed a draft). A video still being checked gets «Обработка
+      // видео» with the date instead of the share window (26 November 2026): the form closed and that window stands
+      const shared = await until(() => [...document.querySelectorAll('ytcp-video-share-dialog')].find(shown)
+        || (!shown(document.querySelector('ytcp-uploads-dialog')) && [...document.querySelectorAll('ytcp-dialog, tp-yt-paper-dialog')].find(d => shown(d) && /\d{4}/.test(text(d))) && 'processing'), 30000);
       if (!shared) return { ok: false, error: 'no «scheduled» confirmation: look at the dialog (a warning, a missing field) and fix it' };
+      if (shared === 'processing') return { ok: !!formId, video_id: formId, processing: true, next: 'close the «processing» window, then verify(video_id) on the channel content page before done' };
       const link = [...shared.querySelectorAll('a')].map(a => a.href).find(h => /youtu\.be\/[\w-]{11}/.test(h)) || text(shared);
       const id = (String(link).match(/youtu\.be\/([\w-]{11})/) || [])[1];
       await sleep(800);

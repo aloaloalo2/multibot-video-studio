@@ -175,7 +175,9 @@ def slot(last: str, now=None, days: int = 1) -> dict:
         soonest = now + timedelta(minutes=30)
         soonest = soonest.replace(second=0, microsecond=0) + timedelta(minutes=(15 - soonest.minute % 15) % 15)
         start = max(soonest, datetime.combine(day, datetime.min.time()).replace(hour=13))
-        if start.hour < 18 or (start.hour == 18 and start.minute == 0):
+        # the quarter hour after midnight is tomorrow's 00:00, not today's (26 November 2026 at 23:25 it read «26th 00:00»,
+        # a moment already gone)
+        if start.date() == day and (start.hour < 18 or (start.hour == 18 and start.minute == 0)):
             return {"date": day.isoformat(), "time": start.strftime("%H:%M")}
         # past the window the video's day is still today: scheduled for the next quarter hour at least 30 minutes
         # ahead, not moved to tomorrow (user, 20 November 2026: «якщо сьогодні вже 18:00… ставити на 20 чи 30 хвилин
