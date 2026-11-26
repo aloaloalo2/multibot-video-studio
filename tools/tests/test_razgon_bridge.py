@@ -583,3 +583,12 @@ class BridgeSpeedTest(unittest.TestCase):
         self.assertEqual(calls, [["add_clip", "add_clip", "add_clip", "delete_clip"], ["group_clips", "group_clips"]])
         blocks = sorted((c["title"], c["start"]) for c in project["tracks"][0]["clips"] if c["title"].startswith("Razgon"))
         self.assertEqual(blocks, [("Razgon · кадр 001", 0.0), ("Razgon · кадр 002", 4.0)])
+
+
+class CoverFramesTest(unittest.TestCase):
+    def test_a_transition_tail_is_covered_by_whole_frames_rounded_up(self):
+        # Andromeda 25 → 26: 0.58 s after the seam is 14.5 frames; the engine counts 15, round() gave 14
+        self.assertEqual(razgon_bridge.cover_frames(0.58, 25), 15)
+        self.assertEqual(razgon_bridge.cover_frames(0.56, 25), 14)
+        self.assertEqual(razgon_bridge.cover_frames(0.5, 25), 13)
+        self.assertEqual(razgon_bridge.cover_frames(0.0, 25), 0)

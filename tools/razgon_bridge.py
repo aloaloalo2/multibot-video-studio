@@ -697,6 +697,13 @@ def memory() -> tuple[int, int] | None:
         return None
 
 
+def cover_frames(seconds: float, fps: int) -> int:
+    """Whole video frames that cover `seconds`, rounded up: round() made a 0.58 s tail 14 frames (14.5 to even) while the
+    engine counts the transition's end as frame 15, and the export stopped with «Timeline video ends before clip»
+    (Andromeda frame 25, 26 November 2026)."""
+    return max(0, math.ceil(seconds * fps - 1e-6))
+
+
 def room(chromiums: int) -> bool:
     """True when `chromiums` more render.mjs workers fit under RAM_LIMIT with everything else that runs now."""
     use = memory()
@@ -1412,8 +1419,8 @@ def studio_frames(args) -> None:
             clip = frame_clip(razgon, frame["number"])
             lead = leads.get(frame["number"], 0.0)
             after = max(MIXED_TAIL, extra.get(frame["number"], 0.0))
-            frames_after = round(after * fps)
-            held = clip.with_name(f"{clip.stem}_tail.mp4" if not lead and frames_after == round(MIXED_TAIL * fps)
+            frames_after = cover_frames(after, fps)
+            held = clip.with_name(f"{clip.stem}_tail.mp4" if not lead and frames_after == cover_frames(MIXED_TAIL, fps)
                                   else f"{clip.stem}_lead{round(lead * fps)}_tail{frames_after}.mp4")
             if held.is_file() and held.stat().st_mtime >= clip.stat().st_mtime:
                 return held
