@@ -944,6 +944,10 @@ function renderProject() {
   $('project-loading').hidden=!state.restoringProject || !!state.project;
   $('editor-workspace').hidden=!state.project || state.view!=='editor';
   $('editor-workspace').classList.toggle('animation-workspace',!!state.project&&projectAnimated());
+  // the creation layout comes with the workspace itself: set later (renderMontageMake), the preview stood a frame at the
+  // top and then jumped down (user, 26 November 2026: «на долю секунду все починає перепригувати на прев'ю»)
+  $('editor-workspace').classList.toggle('creation-workspace',!!state.project&&state.view==='editor');
+  $('editor-production').hidden=!state.project||state.view!=='editor';
   $('editor-timeline').hidden=!state.project || state.view!=='editor';
   $('project-plan').hidden=!state.project || state.view!=='plan';
   $('project-agent').hidden=!state.project || state.view!=='agent';

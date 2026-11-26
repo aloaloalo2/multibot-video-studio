@@ -3524,3 +3524,36 @@ select option{background:#232327;color:#f1f1f2}
 .heygen-avatar-large.is-loading{width:min(92vw,960px);aspect-ratio:16/9}
 .heygen-avatar-large.is-loading .heygen-avatar-large-wait{display:block;position:absolute;top:50%;left:50%;translate:-50% -50%}
 .heygen-avatar-large.is-loading img{visibility:hidden}
+
+/* A project card's outline is a top layer of its own, the same width round the corners (26 November 2026). Its colours
+   are solid (the former translucent ones blended over a dark card), so the corner layer below adds width, not brightness:
+   a 1px arc anti-aliases thinner than a straight 1px line («бордер на загругленнях тоньший») */
+.project-card{--card-ring:#202023}
+.project-card:is(:hover,:focus-within){--card-ring:transparent}   /* a hovered card shows its glow, no outline, as before */
+.project-card:has(>.project-card-ring){border-width:0}
+.project-card-ring{position:absolute;inset:0;z-index:20;border-radius:inherit;box-shadow:inset 0 0 0 1px var(--card-ring);pointer-events:none;transition:box-shadow .15s}
+.project-card.exporting{--card-ring:#8c6b20}
+.project-card.thumb-running{--card-ring:#2d7a58}
+.project-card.producing{--card-ring:#366c52}
+.project-card.producing.producing-kit{--card-ring:#35353a}
+
+/* The studio's frame reads at 90%, as the author set the browser (user, 26 November 2026: «головну… на мінус 90%… по
+   дефолту», «коли проект відкриваю… шапка… логотип перестрибує»): the sidebar, the header with its logo, the tabs and the
+   overview pages, the same on every page. The editor's preview and timeline stay at full size: their pointer maths reads
+   unscaled boxes (a scaled timeline drew the playhead a minute off the click). */
+:root{--frame-zoom:.9}
+.sidebar,.topbar,#project-views,#channel-overview,#trending-page,#project-loading{zoom:var(--frame-zoom)}
+.app-shell{grid-template-columns:calc(241.5px * var(--frame-zoom)) minmax(0,1fr)}
+
+/* An open project's header lines up with the main page's (user, 26 November 2026: «шапка… з'їжджає… логотип»): the
+   channel's name stands at the main page's indent and the logo on the sidebar's pixels. Its bottom line still runs the
+   whole width («в проекті хай та лінія шапки до кінця буде»). */
+@media(min-width:761px){
+  .editor-open .topbar>.project-heading{margin-left:calc(clamp(16px,4vw,50px) + .32px)}
+  .editor-open .editor-brand{align-self:start;margin-top:-9px;height:75px}
+  .editor-open .editor-brand .brand-logo{align-self:center}   /* the sidebar's logo box exactly: top of the page, 75px tall, so the logo and «STUDIO» land on the same pixels */
+}
+/* the channel's icon beside its name on the main page is as large as in an open project (user, 26 November 2026: «логотип
+   канала… в проєкті розмір… подобається… такий самий і на головній») */
+.app-shell:not(.editor-open) #project-title .channel-icon{width:32px;height:32px}
+.app-shell:not(.editor-open) #project-title>strong{gap:11px}   /* the same space to the name as in a project */

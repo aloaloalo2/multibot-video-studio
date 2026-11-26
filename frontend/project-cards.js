@@ -25,7 +25,10 @@ function createProjectCard(project){
     const latest=current(),count=latest.scene_count??latest.scenes?.length??0;
     selectProject(latest.id,{view:directMontage(latest)||count?'editor':'plan'}).catch(error=>status(error.message,true));
   });
-  card.append(open,projectCardHeading(project,current));
+  // the outline is its own top layer: the card's border went thinner on the rounded corners, where the clipped cover
+  // and header covered its inner half (user, 26 November 2026: «бордер на загругленнях тоньший»)
+  const ring=document.createElement('span');ring.className='project-card-ring';ring.setAttribute('aria-hidden','true');
+  card.append(open,projectCardHeading(project,current),ring);
   if(typeof attachProjectCosts==='function')attachProjectCosts(card,project);
   return card;
 }
