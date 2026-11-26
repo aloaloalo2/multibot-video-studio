@@ -234,9 +234,33 @@ def _queued_update() -> None:
                 UPDATE_QUEUED = None   # a stopped update shows its own reason on the button
 
 
+# The studio updates itself (user, 26 November 2026: «автооновлення, щоб не нажимати ту кнопку… не обов'язково навіть її
+# показувати»): a new version on GitHub is applied once nothing runs (the same wait as the button's: exports, recognition,
+# the director, the agents, a voice sample) and the author has changed nothing for a while, then the studio restarts.
+# A version that failed to apply is not tried again by itself; the button still retries it.
+LAST_CHANGE = 0.0
+AUTO_UPDATE_QUIET = 120   # seconds without an edit before the studio restarts under the author
+
+
+def auto_update() -> None:
+    if UPDATE_MANAGER.state.get('status') != 'available' or UPDATE_QUEUED is not None or UPDATE_RESTARTING:
+        return
+    if time.time() - LAST_CHANGE < AUTO_UPDATE_QUIET:
+        return
+    try:
+        begin_update()
+    except store.StudioError as error:
+        if str(error).startswith('Зараз '):
+            queue_update(str(error))   # waits for the work to end, as a pressed button does
+
+
 def update_loop():
     while True:
         UPDATE_MANAGER.refresh()
+        try:
+            auto_update()
+        except Exception:   # noqa: BLE001 — the check goes on every two minutes
+            traceback.print_exc()
         time.sleep(120)
 
 
@@ -1587,7 +1611,7 @@ class Handler(BaseHTTPRequestHandler):
             query = urllib.parse.parse_qs(parsed.query)
             if method == "GET":
                 return self.route_get(path, query)
-            global IN_FLIGHT
+            global IN_FLIGHT, LAST_CHANGE
             # drawing a preview (a CapCut seam, a still, a motion check) changes nothing in a project: it neither counts
             # as a change in flight nor holds back a restart (the editor asked for seams for minutes, 25 November 2026)
             if method == "POST" and re.fullmatch(r"/api/projects/[0-9a-f]{24}/(capcut-preview|still|motion-check)", path):
@@ -1596,6 +1620,7 @@ class Handler(BaseHTTPRequestHandler):
                 if UPDATE_RESTARTING:
                     raise store.StudioError('Студія перезапускається після оновлення.', 503)
                 IN_FLIGHT += 1
+                LAST_CHANGE = time.time()
             try:
                 project_match = re.match(r'^/api/projects/([0-9a-f]{24})(?:/|$)', path)
                 # the live preview only starts a viewer of the Razgon code and changes nothing in the project

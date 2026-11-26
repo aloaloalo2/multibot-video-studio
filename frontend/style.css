@@ -155,7 +155,7 @@ button.danger:hover:not(:disabled){background:#523034}
 .overview-top h1{font-size:22px;line-height:1.2;font-weight:600;margin:0}
 .overview-projects{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,360px),1fr));gap:16px}
 @media(min-width:1180px){.overview-projects{grid-template-columns:repeat(3,minmax(0,1fr))}}
-.project-card{position:relative;border:1px solid #35353a;background:#181819;border-radius:var(--ui-radius-dialog);aspect-ratio:16/9;min-height:0;overflow:hidden;display:flex;flex-direction:column;color:#f1f1f2;transition:border-color .15s,background .15s,box-shadow .2s}
+.project-card{position:relative;border:1px solid #202023;background:#181819;border-radius:var(--ui-radius-dialog);aspect-ratio:16/9;min-height:0;overflow:hidden;display:flex;flex-direction:column;color:#f1f1f2;transition:border-color .15s,background .15s,box-shadow .2s}
 /* a chosen or hovered card glows like the other neon accents instead of getting a coloured border */
 .project-card:hover,.project-card:focus-within{background:#202024;box-shadow:0 0 26px #6bf2ae30,0 0 9px #6bf2ae3d}
 .project-open{display:flex;flex-direction:column;flex:1;width:100%;padding:16px;border:0;border-radius:inherit;background:none;color:inherit;text-align:left}

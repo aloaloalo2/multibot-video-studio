@@ -2009,3 +2009,21 @@ function openingSequence(settings){
   if(old&&old!=='auto'&&old!=='video')return [0,1,2].map(i=>i<Number(settings.first_clip_count||1)?old:'auto');
   return ['auto','auto','auto'];
 }
+
+// The studio updates itself and restarts (backend app.auto_update, 26 November 2026): an open page notices the new start
+// and reloads, but only while the author is not typing, no dialog is open and nothing plays; otherwise it waits.
+(()=>{
+  let boot=null;
+  const busy=()=>{
+    const active=document.activeElement;
+    return (active&&(active.matches('input,textarea,select,[contenteditable="true"]')))||!$('modal-backdrop')?.hidden||!!state?.playing||!!state?.scrubbing;
+  };
+  const tick=async()=>{
+    const data=await fetch('/api/studio/restart',{cache:'no-store',signal:AbortSignal.timeout(4000)})
+      .then(response=>response.ok?response.json():null).catch(()=>null);
+    if(!data?.boot)return;
+    if(boot===null){boot=data.boot;return;}
+    if(data.boot!==boot&&!busy())location.reload();
+  };
+  tick();setInterval(tick,60000);
+})();
