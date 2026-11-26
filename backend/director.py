@@ -205,7 +205,9 @@ def frame_notes(notes: str, channel: str) -> str:
 
 
 def animation_style(project: dict) -> str:
-    """Pass the actual saved look, including its description, instead of copying an older film's palette."""
+    """Pass the actual saved look, including its description, instead of copying an older film's palette. With styles the
+    author starred, the director picks one of them for this film (user, 26 November 2026: «відмітити зірочками стиль,
+    який мені подобається… щоб наш ролик був різноманітним… агенти самі вже підбирають стиль… із тих, що я вибрав»)."""
     animation = channel_settings(project).get('animation') or {}
     if not animation:
         return ''
@@ -213,16 +215,44 @@ def animation_style(project: dict) -> str:
     import style_copy
     sid = animation.get('style') or 'dusk'
     try:
-        own = style_copy.find(project['channel_id'], sid) if sid.startswith(('custom-', 'studio-')) else None
-        style = own or next((s for s in style_lab.presets(store.YOUTUBE_ROOT / store.razgon_rel()) if s['id'] == sid), {})
-    except (OSError, ValueError, KeyError, store.StudioError):
-        style = {}
-    selected = {**animation, 'style': sid}
-    return ("\nЗбережений стиль Razgon цього каналу: " + json.dumps(selected, ensure_ascii=False) +
-            ("\nОпис вигляду: " + style['desc'] if style.get('desc') else '') +
-            "\nЦей вибір має пріоритет над оформленням попередніх випусків і скопійованих сцен. "
-            "Під час prepare використовуй стиль каналу без підміни через --style. "
-            "Для нових сцен узгодь config.json (style, fonts.title/ui/serif, assets) з цими налаштуваннями. "
+        presets = style_lab.presets(store.YOUTUBE_ROOT / store.razgon_rel())
+    except (OSError, ValueError, store.StudioError):
+        presets = []
+
+    def describe(style_id):
+        try:
+            own = style_copy.find(project['channel_id'], style_id) if style_id.startswith(('custom-', 'studio-')) else None
+        except (OSError, ValueError, KeyError):
+            own = None
+        return own or next((s for s in presets if s['id'] == style_id), {})
+    style = describe(sid)
+    starred = [x for x in dict.fromkeys(animation.get('styles') or []) if isinstance(x, str)]
+    pool = list(dict.fromkeys([sid, *starred])) if starred else []
+    selected = {**{k: v for k, v in animation.items() if k != 'styles'}, 'style': sid}
+    text = ("\nЗбережений стиль Razgon цього каналу: " + json.dumps(selected, ensure_ascii=False) +
+            ("\nОпис вигляду: " + style['desc'] if style.get('desc') else ''))
+    if len(pool) > 1:
+        last = None
+        try:
+            films = style_lab.films(store.get_channel_folder(project['channel_id'], include_disabled=True))
+            if films:
+                last = json.loads((films[0][1] / 'config.json').read_text(encoding='utf-8')).get('style')
+        except (OSError, ValueError, KeyError, store.StudioError):
+            last = None
+        rows = []
+        for style_id in pool:
+            found = describe(style_id)
+            rows.append(f"- {style_id}: {found.get('name') or style_id}" + (f". {found['desc']}" if found.get('desc') else ''))
+        text += ("\nАвтор позначив зірочкою кілька стилів, щоб ролики каналу були різними:\n" + "\n".join(rows) +
+                 "\nВибери для цього ролика один із них, що найкраще пасує темі й настрою озвучки" +
+                 (f", і по змозі не {last}, у якому був попередній ролик каналу" if last in pool else "") +
+                 ". Створюй проєкт із ним: prepare --style <id>. Увесь ролик в одному стилі; назви вибраний стиль у звіті "
+                 "одним рядком із причиною. Інші вимоги нижче стосуються вибраного стилю.")
+        text += ("\nЦей вибір має пріоритет над оформленням попередніх випусків і скопійованих сцен. ")
+    else:
+        text += ("\nЦей вибір має пріоритет над оформленням попередніх випусків і скопійованих сцен. "
+                 "Під час prepare використовуй стиль каналу без підміни через --style. ")
+    return text + ("Для нових сцен узгодь config.json (style, fonts.title/ui/serif, assets) з цими налаштуваннями. "
             "Фон бери з mood().sky, палітру й оформлення з S().ui та S().manner, усі написи з FONTS. "
             "Скопійований helper перевір: його фіксований неоновий фон, палітра або font не повинні підміняти вибраний стиль. "
             "Кольори предметів за змістом можна зберігати. Перевір вигляд реальних стоп-кадрів за описом стилю. "

@@ -248,3 +248,23 @@ class DirectorPauseStateTest(unittest.TestCase):
             self.assertEqual(state["status"], "failed")
             self.assertTrue(state["interrupted"])
             self.assertIn("Продовжити режисуру", state["error"])
+
+
+class StarredStylesTest(unittest.TestCase):
+    """The director picks one of the styles the author starred for each film (26 November 2026)."""
+
+    def test_starred_styles_reach_the_brief_and_the_settings_check(self):
+        from unittest.mock import patch
+        import director, style_lab
+        project = {'id': 'x', 'channel_id': 'c'}
+        with patch.object(director, 'channel_settings', return_value={'animation': {'style': 'dusk', 'styles': ['neon', 'golden']}}):
+            text = director.animation_style(project)
+        self.assertIn('prepare --style <id>', text)
+        for sid in ('dusk', 'neon', 'golden'):
+            self.assertIn(f'- {sid}:', text)
+        self.assertNotIn('без підміни через --style', text)
+        with patch.object(director, 'channel_settings', return_value={'animation': {'style': 'dusk'}}):
+            self.assertIn('без підміни через --style', director.animation_style(project))
+        style_lab.validate({'style': 'dusk', 'styles': ['neon', 'custom-abc']})
+        with self.assertRaises(style_lab.StyleLabError):
+            style_lab.validate({'styles': 'neon'})

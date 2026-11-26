@@ -190,6 +190,9 @@ function bindBranding(channel){
   });
   frame.addEventListener('pointercancel',()=>{pan=null;frame.classList.remove('is-panning');});
   let version=settings.logo?.version || 0,present=false,styles=null,cards=null,chosen=animation.style || null,filmStyle=null,request=0,filmRequest=0;
+  // the styles the author starred: the director picks one of them for each film (user, 26 November 2026: «відмітити
+  // зірочками стиль, який мені подобається… щоб наш ролик був різноманітним»)
+  const starred=new Set(Array.isArray(animation.styles)?animation.styles:[]);
   const kind=()=>document.querySelector('input[name="channel-kind"]:checked')?.value || 'regular';
   const logoUrl=()=>`/api/channels/${encodeURIComponent(channel.id)}/logo?v=${version}`;
   const named=style=>styleNames[style.id] || [style.name,style.desc];
@@ -277,6 +280,13 @@ function bindBranding(channel){
       thumb.innerHTML=`<img src="${esc(card(style.id))}" alt=""><span>${esc(named(style)[0])}</span>`;
       thumb.addEventListener('click',()=>choose(style.id));
       cell.append(thumb);
+      const star=document.createElement('button');star.type='button';star.className='style-star';star.dataset.style=style.id;
+      const starTitle=()=>starred.has(style.id)?`Прибрати «${named(style)[0]}» з вибраних стилів`:`Додати «${named(style)[0]}» до вибраних стилів: режисер вибирає з них стиль для кожного ролика`;
+      star.setAttribute('aria-pressed',String(starred.has(style.id)));star.title=starTitle();star.setAttribute('aria-label',star.title);
+      star.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.2l2.6 5.5 6 .8-4.4 4.2 1.1 6-5.3-2.9-5.3 2.9 1.1-6L3.4 9.5l6-.8z"/></svg>';
+      star.addEventListener('click',event=>{event.stopPropagation();starred.has(style.id)?starred.delete(style.id):starred.add(style.id);
+        star.setAttribute('aria-pressed',String(starred.has(style.id)));star.title=starTitle();star.setAttribute('aria-label',star.title);});
+      cell.append(star);
       if(style.own){
         const remove=document.createElement('button');remove.type='button';remove.className='style-remove';remove.title=`Видалити стиль «${style.name}»`;remove.setAttribute('aria-label',remove.title);remove.textContent='×';
         remove.addEventListener('click',()=>removeStyle(style));
@@ -444,5 +454,5 @@ function bindBranding(channel){
   return ()=>({display_name:displayName(),channel_kind:kind(),
     thumbnail_logo:{enabled:$('thumbnail-logo-enabled').checked,position:$('thumbnail-logo-position').value,size:Number($('thumbnail-logo-size').value)},
     logo:{enabled:$('logo-enabled').checked,position:logo.position,size:Number($('logo-size').value),margin:Math.min(15,Math.round(Number($('logo-margin').value)/MARGIN_PX*1000)/1000),opacity:Number($('logo-opacity').value),version},
-    animation:{...animation,...(chosen?{style:chosen}:{}),...textStyle(),allow_stickmen:$('style-stickmen').checked}});
+    animation:{...animation,...(chosen?{style:chosen}:{}),styles:[...starred].filter(id=>!styles||styles.some(style=>style.id===id)),...textStyle(),allow_stickmen:$('style-stickmen').checked}});
 }

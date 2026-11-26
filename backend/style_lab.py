@@ -96,6 +96,9 @@ def validate(animation) -> None:
         raise StyleLabError("Невірні налаштування анімації")
     if "style" in animation and not (isinstance(animation["style"], str) and STYLE_ID.fullmatch(animation["style"])):
         raise StyleLabError("Невідомий стиль анімації")
+    if "styles" in animation and not (isinstance(animation["styles"], list) and len(animation["styles"]) <= 30
+                                       and all(isinstance(sid, str) and STYLE_ID.fullmatch(sid) for sid in animation["styles"])):
+        raise StyleLabError("Невідомий стиль серед вибраних")
     if "assets" in animation and not isinstance(animation["assets"], bool):
         raise StyleLabError("Невірний перемикач асетів")
     if "image_provider" in animation and animation["image_provider"] not in ("codex", "openrouter"):

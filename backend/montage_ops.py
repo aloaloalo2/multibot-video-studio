@@ -500,7 +500,16 @@ class Context:
     @cached_property
     def accent_color(self):
         # the channel's own colour from its style, else its design kit's (never one colour shared by every channel)
-        return style_lab.accent_color(self.project.get("channel_id"), self.animation_style) or channel_design.for_project(self.project)["palette"]["accent"]
+        # the style this film was made in: the director picks one of the styles the author starred (26 November 2026)
+        style = dict(self.animation_style)
+        try:
+            link = store.razgon_link(self.project)
+            used = json.loads((Path(link["project"]) / "config.json").read_text(encoding="utf-8")).get("style") if link else None
+            if isinstance(used, str) and used:
+                style["style"] = used
+        except (OSError, ValueError, KeyError, TypeError, store.StudioError):
+            pass
+        return style_lab.accent_color(self.project.get("channel_id"), style) or channel_design.for_project(self.project)["palette"]["accent"]
 
     def words(self) -> list[dict]:
         if self._words is None:

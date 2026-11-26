@@ -830,6 +830,11 @@ button.channel-settings-button{width:30px;height:30px;padding:0;margin-left:-2px
 .style-cell .style-thumb{width:100%}
 .style-remove{position:absolute;top:4px;right:4px;width:20px;height:20px;padding:0;border:0;border-radius:50%;display:grid;place-items:center;background:#000a;color:#f1f1f2;font-size:14px;line-height:1;opacity:0;transition:opacity .15s}
 .style-cell:hover .style-remove,.style-remove:focus-visible{opacity:1}
+.style-star{position:absolute;top:4px;left:4px;width:22px;height:22px;padding:0;border:0;border-radius:50%;display:grid;place-items:center;background:#000a;color:#c8c9ce;opacity:0;transition:opacity .15s,color .15s;cursor:pointer}
+.style-star svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linejoin:round}
+.style-star[aria-pressed="true"]{opacity:1;color:#f5c542}.style-star[aria-pressed="true"] svg{fill:currentColor}
+.style-cell:hover .style-star{opacity:1}
+@media(hover:none){.style-star{opacity:1}}
 @media(hover:none){.style-remove{opacity:1}}
 .style-add-box{display:grid;place-items:center;width:100%;aspect-ratio:16/9;border:2px dashed #4a4a52;border-radius:9.5px;color:#9a9ca4;font-size:22px;transition:border-color .15s,color .15s}
 @media(hover:hover){.style-add:not(:disabled):hover .style-add-box{border-color:var(--ui-accent);color:var(--ui-accent)}}
