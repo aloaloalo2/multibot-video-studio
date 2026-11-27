@@ -284,6 +284,18 @@ class DescriptionRuleTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 metadata.validate(self.value(bad), self.TITLE)
 
+    def test_every_film_gets_its_own_description_shape(self):
+        # the author, 27 November 2026: «рандомно то так то ні емодзі», «шаблонність хочу прибрати»
+        shapes = {metadata.shape(f'p{n}') for n in range(40)}
+        self.assertGreater(len(shapes), 20)
+        self.assertEqual(metadata.shape('p1'), metadata.shape('p1'))
+        text = ' '.join(shapes)
+        self.assertIn('No emoji at all.', text)
+        self.assertIn('Exactly one emoji', text)
+        self.assertIn(metadata.shape('p7'), metadata.prompt(None, 'p7'))
+        description = 'Почему Луна стала для нас такой далёкой? 🌕 Разбираем, во что обходится полёт.\n\n#космос #Луна'
+        self.assertEqual(metadata.validate(self.value(description), self.TITLE)['description'], description)
+
     def test_the_brief_names_the_channels_latest_descriptions(self):
         with patch.object(metadata, 'recent_descriptions', return_value=['Old one.\n\n#x #y']):
             text = metadata.prompt('c', 'p')

@@ -54,8 +54,32 @@ def recent_descriptions(cid, skip=None, limit=6):
     return found
 
 
+# Every description gets its own shape, picked at random for the film (the author, 27 November 2026: «так само додавати
+# треба рандомно то так то ні емодзі», «шаблонність хочу прибрати, щоб кожен опис був унікальний»): emoji or none,
+# two or three sentences, how it opens, how many hashtags. The same film keeps the same shape when asked again.
+OPENINGS = ('Start with the most surprising fact or number from the script.',
+            'Start with a short question the viewer may have asked themselves.',
+            'Start with the one thing this video sorts out that people often get wrong.',
+            'Start straight with the subject and what happens to it, no lead-in.',
+            'Start with a concrete scene, place or moment from the script.',
+            'Start with what the viewer will be able to tell or do after watching.')
+
+
+def shape(seed) -> str:
+    import random
+    rng = random.Random(str(seed or random.random()))
+    emoji = rng.choice((0, 0, 1, 1, 2))
+    sentences = rng.choice((2, 3))
+    hashtags = rng.randint(1, 9)
+    words = {0: 'No emoji at all.', 1: 'Exactly one emoji that fits the subject, placed where a person would put it.',
+             2: 'Two emoji that fit the subject, placed naturally (not both at the end, not as bullet points).'}[emoji]
+    return (f'\nTHIS DESCRIPTION\'S OWN SHAPE (picked at random so no two descriptions look alike; follow it): '
+            f'{sentences} sentences. {rng.choice(OPENINGS)} {words} Exactly {hashtags} hashtag'
+            f'{"" if hashtags == 1 else "s"} on the hashtag line.')
+
+
 def prompt(cid=None, skip=None):
-    text = PROMPT + '\nCURRENT STUDIO AUDIENCE POLICY:\n' + audience_policy.text()
+    text = PROMPT + '\nCURRENT STUDIO AUDIENCE POLICY:\n' + audience_policy.text() + shape(skip)
     previous = recent_descriptions(cid, skip) if cid else []
     if previous:
         text += ('\nThe latest descriptions of this channel are below. Yours must differ from all of them: other words, '
