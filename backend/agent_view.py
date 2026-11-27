@@ -184,18 +184,22 @@ def project_summary(project: dict, readiness: dict | None = None, plan: dict | N
             # transition (22 November 2026: «під картинкою нема просто чорного фона»)
             problems.append("вертикальне фото без тла: під ним нічого на весь кадр")
         if fmt == "text":
-            # a text frame stands without words while the voice already speaks (22 November 2026: «36 кадр стоїть без
-            # тексту 2 секунди»): its first words should come in with the voice
+            # nothing new comes on over the background once the frame is in: no word, no drawing (22 November 2026: «36
+            # кадр стоїть без тексту 2 секунди»; 27 November 2026, Astéroïde 37 and 86: «це вважається вже… як брак»). A
+            # motion-code layer counts from the moment it draws something new, and what came in under the transition into
+            # the frame does not count («як будто воно там було»)
+            came_in = montage_ops.incoming(project, frame)
+            alive = montage_ops.first_shown(project, frame, came_in)
+            if alive is None or alive - came_in > montage_ops.LEAD_GAP:
+                wait = (alive if alive is not None else frame["end"] - frame["start"]) - came_in
+                problems.append(f"мертвий кадр {wait:.1f} с після переходу: нічого не з'являється (графіка чи слово з голосом)")
+            # the voice says why we are here before the words on screen do («чому ми перейшли до нього, не ясно»)
             shown = [float(c["start"]) + min((float(w.get("start", 0)) for w in c.get("text_words") or []), default=0.0)
                      for c in frame["clips"] if c.get("kind") == "text" and str(c.get("text") or "").strip()]
             timings = (plan_frame or {}).get("sentence_timings") or []
             spoken = max(frame["start"], float(timings[0]["start"])) if timings else frame["start"]
-            # a motion-code layer that draws from the frame's start carries the picture until the words come (Andromeda
-            # 118, 25 November 2026: two galaxies drift together before «Милкомеда» is written): the frame is not empty
-            drawn = any(c.get("kind") == "animation" and c.get("content_type") == "code"
-                        and float(c["start"]) <= spoken + .5 for c in frame["clips"])
-            if shown and not drawn and min(shown) - spoken > 1.6:
-                problems.append(f"текстовий кадр без тексту {min(shown) - spoken:.1f} с, хоча голос уже говорить")
+            if shown and min(shown) - spoken > montage_ops.LEAD_GAP:
+                problems.append(f"текст запізнюється за голосом на {min(shown) - spoken:.1f} с (lead_text дає підводку)")
             if montage_ops.text_layout_changes(frame, (int(project.get("width") or 1920), int(project.get("height") or 1080))):
                 # its words stand off the middle or apart from one another (Andromeda 40, 25 November 2026)
                 problems.append("текст розкиданий, не одним блоком по центру (compose_text збирає)")

@@ -12,6 +12,7 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -215,6 +216,72 @@ def stills(project: dict, clip: dict, moments: list, folder: Path) -> dict:
     if answer.get("ok") and fades_out(answer.get("stills") or []):
         answer["warning"] = FADES_OUT
     return answer
+
+
+ONSET_STEPS = (0.0, .2, .4, .6, .8, 1.0, 1.2, 1.5, 1.8, 2.1, 2.5, 3.0)   # seconds from the clip's start it is looked at
+
+
+def _thumb(file) -> list:
+    """The still as 32×18 grey levels of its drawing over black: enough to see a thing move or change."""
+    from PIL import Image
+    with Image.open(file) as image:
+        rgba = image.convert("RGBA")
+        black = Image.new("RGBA", rgba.size, (0, 0, 0, 255))
+        return list(Image.alpha_composite(black, rgba).convert("L").resize((32, 18), Image.BILINEAR).getdata())
+
+
+def looks(project: dict, clip: dict) -> dict | None:
+    """The clip's drawing at each of ONSET_STEPS: how much of the frame it covers and a tiny grey picture of it, from
+    one Chromium pass of a few stills, remembered by the clip's fingerprint. None when it cannot be drawn now."""
+    data = spec(project, clip)
+    key = fingerprint(data)[:32]
+    folder = store.cache_dir(project) / "motion-code"
+    memo_file = folder / "looks.json"
+    memo = store.read_json(memo_file, {}) if memo_file.is_file() else {}
+    if not isinstance(memo.get(key), dict):
+        moments = [t for t in ONSET_STEPS if t < float(data["duration"])] or [0.0]
+        with tempfile.TemporaryDirectory() as work, _SLOTS:
+            answer = stills(project, clip, moments, Path(work))
+            files = answer.get("stills") or []
+            if not answer.get("ok") or len(files) != len(moments):
+                return None
+            look = {"steps": moments, "shares": [round(coverage(f), 6) for f in files], "thumbs": [_thumb(f) for f in files]}
+        memo = store.read_json(memo_file, {}) if memo_file.is_file() else {}
+        memo[key] = look
+        folder.mkdir(parents=True, exist_ok=True)
+        store.atomic_json(memo_file, memo)
+    return memo[key]
+
+
+CHANGE = 12   # grey levels (of 255) some spot of the drawing changes by to count as moving or changing (a planet coming in
+# changes a spot by 60, two galaxies drifting too slowly to see by 1 or 2)
+
+
+def appears(project: dict, clip: dict, after: float = 0.0) -> float | None:
+    """The first moment after `after` (seconds from the clip's start) when the clip's drawing visibly comes on, moves or
+    changes from what it was at `after`. A drawing that came in before `after` and then stands is no appearance: a
+    planet faded in under the transition into the frame read as standing there all along (user, 27 November 2026,
+    Astéroïde 86: «воно появилося одразу після переходу… як будто воно там було»); two galaxies drifting together are
+    (Andromeda 118). None when nothing happens."""
+    look = looks(project, clip)
+    if not look:
+        return None
+    steps, shares, thumbs = look["steps"], look["shares"], look["thumbs"]
+    if after <= 0:
+        return next((t for t, v in zip(steps, shares) if v > .0005), None)
+    i = max((k for k, t in enumerate(steps) if t <= after), default=None)
+    if i is None:
+        return next((t for t, v in zip(steps, shares) if v > .0005), None)
+    base = thumbs[i]
+    for t, v, thumb in zip(steps[i + 1:], shares[i + 1:], thumbs[i + 1:]):
+        if v > shares[i] * 1.2 + .0005 or max(abs(x - y) for x, y in zip(thumb, base)) > CHANGE:
+            return t
+    return None
+
+
+def first_drawn(project: dict, clip: dict) -> float | None:
+    """When the clip first puts anything on screen, seconds from its start; None when it draws nothing early."""
+    return appears(project, clip, 0.0)
 
 
 FADES_OUT = ("графіка зникає до кінця кадру: намальоване має лишатися до кінця шару, перехід забирає його разом із кадром "

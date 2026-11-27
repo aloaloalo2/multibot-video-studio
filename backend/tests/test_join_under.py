@@ -43,6 +43,30 @@ class JoinUnderTest(unittest.TestCase):
         self.assertTrue(clips['b']['join_in']['under'])
         self.assertEqual(clips['a']['join_out']['group'], clips['caption']['join_out']['group'])
 
+    def test_a_layer_gone_before_the_seam_does_not_decide_the_side_on_top(self):
+        # Astéroïde 86→87 (27 November 2026): a lead-in of frame 86 on the top layer ended 2.8 s before the seam; counting
+        # it put 86 «on top», its group fade lay under 87 and 87 was drawn whole over it, a plain cut
+        project = self.project(0, 1)
+        project['tracks'].append({'id': 'l2', 'clips': [{'id': 'lead', 'kind': 'text', 'start': 0, 'duration': 1.2}]})
+        project['scene_groups'][0]['clip_ids'].append('lead')
+        clips = self.rendered(project)
+        self.assertTrue(clips['a']['join_out']['under'])
+        self.assertFalse(clips['b']['join_in']['under'])
+
+    def test_a_layer_of_the_next_frame_that_comes_after_the_transition_does_not_either(self):
+        project = self.project(1, 0)
+        project['tracks'].append({'id': 'l2', 'clips': [{'id': 'late', 'kind': 'image', 'start': 6, 'duration': 2}]})
+        project['scene_groups'][1]['clip_ids'].append('late')
+        clips = self.rendered(project)
+        self.assertFalse(clips['a']['join_out']['under'])
+        self.assertTrue(clips['b']['join_in']['under'])
+
+    def test_a_dissolve_without_a_length_is_the_studios_shorter_one(self):
+        project = self.project(0, 1)
+        project['join_transitions'] = []
+        joins.set_transition(project, {'from_ref': 'group:ga', 'to_ref': 'group:gb', 'type': 'crossfade'})
+        self.assertAlmostEqual(project['join_transitions'][0]['duration'], .30)
+
 
 if __name__ == '__main__':
     unittest.main()

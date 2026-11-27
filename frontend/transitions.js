@@ -27,7 +27,7 @@ async function applyTransitionAtMarker(marker,type,origin){
   const previous=(state.project.join_transitions || []).find(join=>join.id===origin);
   const selected=state.selectedTransition,following=previous && selected?.fromRef===previous.from_ref && selected?.toRef===previous.to_ref;
   if(following)state.selectedTransition={fromRef:marker.dataset.fromRef,toRef:marker.dataset.toRef};
-  try{return await action('set_join_transition',{from_ref:marker.dataset.fromRef,to_ref:marker.dataset.toRef,type,duration:previous?.duration ?? (isCapcutTransition(type) ? capcutDefaultDuration(type) : graphicTransitionPresets[type] ? .5 : .35),move_from:origin||undefined},'Перехід додано на стик.');}
+  try{return await action('set_join_transition',{from_ref:marker.dataset.fromRef,to_ref:marker.dataset.toRef,type,duration:previous?.duration ?? (isCapcutTransition(type) ? capcutDefaultDuration(type) : graphicTransitionPresets[type] ? .5 : type==='crossfade' ? .3 : .35),move_from:origin||undefined},'Перехід додано на стик.');}
   catch(error){if(following){state.selectedTransition=selected;renderInspector();}throw error;}
 }
 document.addEventListener('pointermove',event=>{
@@ -52,7 +52,9 @@ function transitionInfo(clip){
   if(joinCacheToken!==token){joinCacheToken=token;joinCache=new Map();const level=new Map();(typeof layers==='function'?layers():[]).forEach((layer,i)=>(layer.clips||[]).forEach(c=>level.set(c.id,/^Razgon · кадр/.test(c.title||'')?-1:i)));   // the live Razgon player lies under the whole montage, so a seam with a Razgon frame fades the other side (22 November 2026: «між 5 і 6 нема переходу»)
     for(const join of state.project?.join_transitions || []){
       const ins=transitionEndpoint(join.to_ref),outs=transitionEndpoint(join.from_ref),lv=list=>list.map(c=>level.get(c.id)).filter(v=>v!==undefined);
-      const a=lv(outs),b=lv(ins),outUnder=!!(a.length&&b.length&&Math.max(...a)<Math.max(...b)),inUnder=!!(a.length&&b.length&&Math.max(...b)<Math.max(...a));   // a fading group lies at its top layer's place (transitionGroup)
+      // only the clips on screen in the transition decide which side lies on top, as the export (joins.transport): a
+      // lead-in gone seconds before the seam made Astéroïde 86→87 a plain cut (27 November 2026)
+      const a=lv(outs.filter(c=>Math.abs(Number(c.start)+Number(c.duration)-join.seam)<=.05)),b=lv(ins.filter(c=>Number(c.start)<Number(join.seam)+Number(join.duration))),outUnder=!!(a.length&&b.length&&Math.max(...a)<Math.max(...b)),inUnder=!!(a.length&&b.length&&Math.max(...b)<Math.max(...a));   // a fading group lies at its top layer's place (transitionGroup)
       for(const c of ins)joinCache.set(c.id,{...(joinCache.get(c.id)||{}),incoming:{...join,under:inUnder}});
       for(const c of outs)if(Math.abs(Number(c.start)+Number(c.duration)-join.seam)<.05)joinCache.set(c.id,{...(joinCache.get(c.id)||{}),outgoing:{...join,under:outUnder}});}}
   return joinCache.get(clip.id) || {};
@@ -120,7 +122,7 @@ function renderTransitionInspector(join){
   const options=Object.entries(transitionNames).filter(([type])=>type!=='cut').map(([type,name])=>`<option value="${esc(type)}" ${type===join.type?'selected':''}>${esc(name)}</option>`).join('');
   box.innerHTML=`<div class="universal-properties transition-properties"><strong>Перехід</strong><small>Стик ${clock(join.seam)}</small><section><label>Вид переходу<select id="transition-property-type">${options}</select></label><label>Тривалість, с<input id="transition-property-duration" type="number" min="0.05" max="${limit}" step="0.001" value="${join.duration}"></label><label><span class="transition-speed-title">Швидкість <output id="transition-property-speed-value"></output></span><input id="transition-property-speed" type="range" min="0" max="100" step="1" aria-label="Тривалість переходу"></label><div class="transition-speed-ends"><span>Швидше</span><span>Повільніше</span></div><p id="transition-property-autosave" aria-live="polite">Збережено</p></section><button id="transition-property-remove" class="danger full trash-button" type="button">${trashIcon}<span>Прибрати перехід</span></button></div>`;
   const type=$('transition-property-type'),duration=$('transition-property-duration'),speed=$('transition-property-speed'),speedValue=$('transition-property-speed-value'),saveState=$('transition-property-autosave');
-  const midpoint=()=>{const standard=isCapcutTransition(type.value) ? capcutDefaultDuration(type.value) : graphicTransitionPresets[type.value] ? .5 : .35;return standard<limit?standard:(.05+limit)/2;};
+  const midpoint=()=>{const standard=isCapcutTransition(type.value) ? capcutDefaultDuration(type.value) : graphicTransitionPresets[type.value] ? .5 : type.value==='crossfade' ? .3 : .35;return standard<limit?standard:(.05+limit)/2;};
   const update=(moveThumb=true)=>{const value=Number(duration.value);speed.disabled=limit<=.05;if(!Number.isFinite(value)||value<=0){speedValue.textContent='';return;}speedValue.textContent=new Intl.NumberFormat('uk-UA',{minimumFractionDigits:2,maximumFractionDigits:3}).format(value)+' с';speed.setAttribute('aria-valuetext',speedValue.textContent);if(moveThumb){const clamped=Math.max(.05,Math.min(limit,value)),mid=midpoint();const position=clamped<=mid?50*(clamped-.05)/(mid-.05):50+50*(clamped-mid)/(limit-mid);speed.value=Number.isFinite(position)?Math.max(0,Math.min(100,Math.round(position))):50;}};
   const projectId=state.project.id;let pending=null,saving=false,removing=false,inFlightKey=null,savedKey=`${join.type}:${Number(join.duration).toFixed(3)}`,durationTimer;
   const key=entry=>`${entry.type}:${Number(entry.duration).toFixed(3)}`;

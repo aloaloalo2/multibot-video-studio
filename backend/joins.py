@@ -11,6 +11,9 @@ OFFERED=set(GRAPHIC_PRESETS)
 GRAPHIC_PRESETS={**json.loads((Path(__file__).resolve().parents[1]/'engine'/'retired-graphic-transitions.json').read_text()),**GRAPHIC_PRESETS}
 CAPCUT=json.loads((Path(__file__).resolve().parents[1]/'frontend'/'capcut-catalog.json').read_text())['transitions']
 MAX_TRANSITION=0.7   # seconds: no transition lasts longer (user, 25 November 2026: «всі переходи, які довго… скоротити…
+# a plain dissolve, 15% shorter than the former 0.35 s (user, 27 November 2026, Astéroïde 84→85: «зроби його на 15%
+# коротшим, бо він зазвичай довго… працює… в самій студії»): 0.30 s, whole frames at 25 and 30 fps
+CROSSFADE = .30
                      # швидкість мені не подобається»); 30% off the ones over 1.2 s still left 1.0–1.4 s
 def capcut_duration(kind):
     """How long a CapCut transition lasts on a seam: its own length, at most MAX_TRANSITION. The engine plays the
@@ -42,7 +45,7 @@ def set_transition(project,payload):
     kind=payload.get('type')
     if kind not in TYPES:raise ValueError('Unknown transition')
     seam,maximum,a,b=boundary(project,payload.get('from_ref'),payload.get('to_ref'))
-    duration=min(float(payload.get('duration',.35)),MAX_TRANSITION)   # no transition longer than MAX_TRANSITION
+    duration=min(float(payload.get('duration',CROSSFADE if kind=='crossfade' else .35)),MAX_TRANSITION)   # no transition longer than MAX_TRANSITION
     if kind!='cut' and not .05<=duration<=min(2,maximum):raise ValueError('Transition is longer than an adjacent frame')
     old=project.get('join_transitions',[])
     project['join_transitions']=[j for j in old if j['id']!=payload.get('move_from') and j['from_ref']!=payload['from_ref'] and j['to_ref']!=payload['to_ref']]
@@ -335,7 +338,12 @@ def transport(project,layers):
         effect={'type':join['type'],'duration':join['duration'],'seam':begin}
         # a dissolve fades only the side on top; the side under it stays whole (user, 21 November 2026: «переходи, які в
         # чорноту переходить, а потім різко появляється наступний кадр»): both fading over black left the middle at 75%
-        out_levels=[level[c['id']] for c in outgoing if c['id'] in level];in_levels=[level[c['id']] for c in incoming if c['id'] in level]
+        # only the clips on screen in the transition count: a lead-in that left the frame seconds before its end put the
+        # outgoing frame «on top» while its group lay under the next one, and the next frame was drawn whole over it, a
+        # plain cut with a blue glow (user, 27 November 2026, Astéroïde 86→87: «переходу цього… візуально ніяк не працює»)
+        seam_at=float(join['seam'])
+        out_levels=[level[c['id']] for c in outgoing if c['id'] in level and abs(float(c['start'])+float(c['duration'])-seam_at)<=.05]
+        in_levels=[level[c['id']] for c in incoming if c['id'] in level and float(c['start'])<seam_at+float(join['duration'])]
         # a fading group is drawn at its top layer's place (engine/render.py group_key), so the group whose top layer is
         # higher lies on top even when an accent of the other one sits above some of its layers
         out_under=bool(out_levels and in_levels and max(out_levels)<max(in_levels));in_under=bool(out_levels and in_levels and max(in_levels)<max(out_levels))

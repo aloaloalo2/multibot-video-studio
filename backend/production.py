@@ -369,6 +369,11 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
    blur (розмита картинка випуску під контрастною підкладкою), grid (чорне тло, сіра сітка). Сценарій написаний для озвучки
    (числа словами, «Наса», «эс восемь», «Хаббл»), а вставку читають очима: через --display дай текст для екрана, числа цифрами,
    назви й позначення так, як їх пишуть (NASA, S8, 14 млрд), без змісту, якого немає в репліці.
+   Мертвий кадр це брак: щойно перехід у кадр закінчився, не пізніше ніж за 0,7 с щось має з'явитися чи помітно
+   рушити (слово з голосом, графіка моушн-коду). Те, що виринуло під самим переходом, глядач сприймає як те, що стояло
+   там завжди: свою графіку починай після переходу, і помітно (виростання, виїзд), а не лише проявою. Текст не відстає від
+   голосу понад 0,7 с: якщо показуєш лише ключову частину репліки, почни --display з її початку або дай підводку з
+   перших слів (op lead_text ставить її сама). summary називає обидві вади: «мертвий кадр» і «текст запізнюється».
    Готові основи лише заготовка: якщо задум інший, міняй і додавай будь-які шари групи «Кадр N» через POST /api/projects/{project['id']}/actions
    (add_clip з group_id, update_clip, delete_clip; ефект CapCut як кліп kind animation, content_type capcut_effect діє на шари
    під ним): інше відео чи картинка, колір, градієнт, візерунок, прозорість, розмір і місце тексту, word_entrance; слова лишаються
@@ -609,6 +614,10 @@ def film_sounds(pid: str) -> None:
         # the text frames first stand as one centred block each (25 November 2026), so the sounds follow the final words;
         # then every frame that stands still gets a slow camera (user, 26 November 2026: «там де камера не рухається там
         # треба кадр рухати»)
+        # a text frame whose shown words start later than its voice gets the words said before them first (user, 27
+        # November 2026: «текстовий кадр появився, і там на протязі секунди просто пусто»); its own batch, so the
+        # layout and the typing sounds below see the new words
+        montage_ops.run(pid, [{"op": "lead_text"}])
         montage_ops.run(pid, [{"op": "compose_text"}, {"op": "frame_camera"}, {"op": "transition_sounds"}, {"op": "typing_sounds"},
                               {"op": "drawing_sounds"}])
         import event_sounds

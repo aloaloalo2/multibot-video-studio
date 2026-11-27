@@ -1411,6 +1411,131 @@ def compose_text(ctx: Context, spec: dict) -> None:
             ctx.report.append(f"кадр {frame['number'] or frame['group']['title']}: текст зібрано по центру")
 
 
+LEAD_GAP = .7      # seconds the voice may talk in a text frame before its first word is on screen
+SETTLE = .2        # seconds after the transition into a frame before a drawing coming in reads as its own appearance
+LEAD_STACK = 12    # a lead-in of at most this many words stands above the text for the whole frame
+LEAD_FADE = .3     # a longer lead-in, or one beside the director's own layers, leaves in this time before the text comes
+
+
+def incoming(project: dict, frame: dict) -> float:
+    """Seconds the transition into the frame lasts (0 for a cut): until then the frame is still coming in."""
+    ref = "group:" + frame["group"]["id"]
+    return max((float(j.get("duration") or 0) for j in project.get("join_transitions", []) if j.get("to_ref") == ref), default=0.0)
+
+
+def first_shown(project: dict, frame: dict, after: float = 0.0) -> float | None:
+    """Seconds from the frame's start when something first comes on screen over its background at or after `after`: a
+    word of its text, something new in its motion code's drawing, a picture or graphic standing in the frame (not one over
+    the whole frame). None when nothing does. A background, a veil and a CapCut texture alone are a dead frame (user,
+    27 November 2026, Astéroïde 86: «розмиття появилось, ще нічого не появляється»); what came in under the transition
+    into the frame looks as if it stood there all along («воно появилося одразу після переходу… як будто воно там
+    було»), so `after` is the end of that transition."""
+    import motion_code
+    start = float(frame["start"])
+    moments = []
+    for clip in frame["clips"]:
+        at = float(clip["start"]) - start
+        if clip.get("kind") == "text" and str(clip.get("text") or "").strip():
+            # the words of a full-frame text come in over the transition, not faded with it (transitions.js
+            # groupedJoinSides), so a word written under the transition is seen coming in
+            words = clip.get("text_words") or [{"start": 0.0}]
+            moments.extend(max(after, at + float(w.get("start", 0))) if clip.get("text_role") == "full_frame"
+                           else at + float(w.get("start", 0)) for w in words)
+        elif clip.get("content_type") == "code":
+            try:
+                # what comes in with the transition's last frames still reads as the transition (Astéroïde 86, a planet
+                # growing from the transition's end: «воно появилося одразу після переходу»)
+                drawn = motion_code.appears(project, clip, after + (SETTLE if after > 0 else 0) - at)
+            except Exception:   # a layer that cannot be drawn now says nothing about the frame
+                drawn = None
+            if drawn is not None:
+                moments.append(at + drawn)
+        elif clip.get("kind") in ("image", "video", "animation") and clip.get("content_type") != "capcut_effect":
+            size = float(clip.get("scale", 1) or 1)
+            if float(clip.get("width", 1)) * size < .98 or float(clip.get("height", 1)) * size < .98:
+                moments.append(at)
+    moments = [m for m in moments if m >= after - .02]
+    return max(0.0, min(moments)) if moments else None
+
+
+def lead_in_actions(ctx: Context, frame: dict) -> list[dict]:
+    """A full-frame text frame whose shown words begin later in its sentence than the voice does (an adapted excerpt:
+    Astéroïde 37 shows «des particules rapides…» from 1.64 s while the voice says «Pour se brûler, il faut à la fois»
+    from the frame's start; user, 27 November 2026: «текстовий кадр появився, і там на протязі секунди просто пусто»)
+    gets the words said before it as a lead-in, each coming with the voice. A short one stands above the text as one
+    centred block for the whole frame; a long one, or one in a frame with the director's own layers (code, a picture),
+    stands in the middle and fades out just before the text comes, so nothing he placed moves."""
+    import copy
+    if not _full_frame_text(frame) or not frame.get("plan"):
+        return []
+    texts = [c for c in frame["clips"] if c.get("kind") == "text" and c.get("text_words")]
+    if not texts or any(str(c.get("title", "")).endswith(" підводка") for c in frame["clips"]):
+        return []
+    shown_at = min(float(c["start"]) + min(float(w.get("start", 0)) for w in c["text_words"]) for c in texts)
+    start, end = float(frame["start"]), float(frame["end"])
+    tokens = [(t, s) for t, s in _timed_tokens(ctx, frame["plan"]) if s >= start - .05]
+    lead = [(t, max(s, start)) for t, s in tokens if s < shown_at - .05]
+    if not lead or shown_at - lead[0][1] < LEAD_GAP:
+        return []
+    main = max(texts, key=lambda c: len(c["text_words"]))
+    fps = int(ctx.project.get("fps") or 25)
+    onset = max(start, math.floor(lead[0][1] * fps) / fps)
+    family = main.get("font_family") or ctx.project.get("font_family") or "Golos"
+    stub = {"width": float(main.get("width", .8)), "height": float(main.get("height", .7)),
+            "font_size": float(main.get("font_size") or 68), "font_weight": int(main.get("font_weight") or 700),
+            "text_words": [{"text": t, "start": round(max(0.0, s - onset), 3), "x": .5, "y": .5, "width": .1, "height": .1} for t, s in lead]}
+    typography.reflow({"width": ctx.W, "height": ctx.H}, stub, family)
+    lt, lb, _ = _text_extent({**stub, "y": .5})
+    left, right = _letters_span({**stub, "x": .5})
+    stacked = len(texts) == 1 and len(lead) <= LEAD_STACK and _composable(frame) is not None
+    actions = []
+    fields = {"kind": "text", "title": f"K{frame['number']:03d} підводка", "text": " ".join(t for t, _ in lead),
+              "color": main.get("color") or "#ffffff", "font_family": family, "font_weight": stub["font_weight"],
+              "font_size": stub["font_size"], "width": stub["width"], "height": stub["height"], "text_words": stub["text_words"],
+              "x": round(.5 - ((left + right) / 2 - .5), 5), "start": onset, "group_id": frame["group"]["id"],
+              "layer_id": next(t["id"] for t in ctx.project["tracks"] if any(c["id"] == main["id"] for c in t.get("clips", [])))}
+    for key in ("word_entrance", "shadow", "easing"):
+        if main.get(key) is not None:
+            fields[key] = copy.deepcopy(main[key])
+    if stacked:
+        # the lead-in over the text, the two one block in the middle of the frame (compose_text's spacing)
+        mt, mb, _ = _text_extent(main)
+        gap = stub["font_size"] * .05 / ctx.H
+        top = .5 - ((lb - lt) + gap + (mb - mt)) / 2
+        dy = top + (lb - lt) + gap - mt
+        fields.update(y=round(.5 + (top - lt), 5), duration=end - onset, opacity=.78)
+        changes = {"y": round(float(main.get("y", .5)) + dy, 5)}
+        if any("y" in k for k in main.get("keyframes") or []):
+            changes["keyframes"] = [{**k, **({"y": round(float(k["y"]) + dy, 5)} if "y" in k else {})} for k in main["keyframes"]]
+        actions.append({"type": "update_clip", "payload": {"clip_id": main["id"], "changes": changes}})
+    else:
+        # in the middle until the text comes, then gone: the director's layers around the text stay where he put them
+        # gone by the moment the text's first word comes in, never over it (the first try faded through «des» of
+        # Astéroïde 37); its last word shows for a breath before the fade
+        until = math.floor(shown_at * fps + .5) / fps
+        fade = min(until - .08, max(lead[-1][1] + .1, until - LEAD_FADE)) - onset
+        duration = until - onset
+        if until - onset < .5 or fade >= duration:
+            return []
+        duration = round(duration, 3)
+        fields.update(y=.5, duration=duration,
+                      keyframes=[{"time": round(fade, 3), "opacity": 1.0}, {"time": end_time(duration), "opacity": 0.0}])
+    actions.insert(0, {"type": "add_clip", "payload": fields})
+    return actions
+
+
+def lead_text(ctx: Context, spec: dict) -> None:
+    """{"op": "lead_text", "frames": [..] | absent for all}: the words said before a text frame's shown text, put on
+    screen with the voice (lead_in_actions)."""
+    wanted = spec.get("frames")
+    frames = [find_frame(ctx.frames, ref) for ref in wanted] if wanted else ctx.frames
+    for frame in frames:
+        actions = lead_in_actions(ctx, frame)
+        ctx.actions.extend(actions)
+        if actions:
+            ctx.report.append(f"кадр {frame['number']}: підводка «{actions[0]['payload']['text']}» з голосом")
+
+
 HOST_IN = "crossfade"   # the one way into the host frame: a plain dissolve (26 November 2026)
 OUT_ONLY = {"capcut_t30"}   # «Розрізання й панорама»: the host's way out or a seam between other frames only
 
@@ -1500,7 +1625,7 @@ def transitions(ctx: Context, spec: dict) -> None:
     # 2026, «Кадри з монтажу» of 1.4 s in 0.45 s out of the host: «він якийсь недопилений»); out of the host only the
     # transitions that keep their shape at HOST_OUT seconds
     def natural(kind):
-        return joins.capcut_duration(kind) if kind in joins.CAPCUT else .5 if kind in joins.GRAPHIC_PRESETS else .35
+        return joins.capcut_duration(kind) if kind in joins.CAPCUT else .5 if kind in joins.GRAPHIC_PRESETS else joins.CROSSFADE if kind == "crossfade" else .35
     def keeps_shape(kind, room):
         return natural(kind) <= room * MAX_SQUEEZE
     lively = [t for t in kinds if t not in soft and keeps_shape(t, HOST_OUT)] or [t for t in kinds if t not in soft] or list(kinds)
@@ -1694,7 +1819,7 @@ def _frame_camera(ctx, spec):
     live_montage.frame_camera(ctx, spec)
 
 
-OPS = {"host_inset": _host_inset, "frame_camera": _frame_camera, "effect": effect, "transition_sounds": soundtrack.transitions, "typing_sounds": soundtrack.typing, "drawing_sounds": soundtrack.drawing, "appear_sounds": soundtrack.appear, "soundtrack": soundtrack.place, "animation": native_animation.place, "reglue": reglue, "reanimate": reglue, "animate_accents": reglue, "accent": accent, "clear_accents": clear_accents, "replace": replace, "transitions": transitions, "place": place, "remove": remove, "motion_code": motion_code_op, "compose_text": compose_text, "design_text": design_text}
+OPS = {"host_inset": _host_inset, "frame_camera": _frame_camera, "effect": effect, "transition_sounds": soundtrack.transitions, "typing_sounds": soundtrack.typing, "drawing_sounds": soundtrack.drawing, "appear_sounds": soundtrack.appear, "soundtrack": soundtrack.place, "animation": native_animation.place, "reglue": reglue, "reanimate": reglue, "animate_accents": reglue, "accent": accent, "clear_accents": clear_accents, "replace": replace, "transitions": transitions, "place": place, "remove": remove, "motion_code": motion_code_op, "compose_text": compose_text, "design_text": design_text, "lead_text": lead_text}
 
 
 def run(pid: str, ops: list, expected_revision=None, dry_run: bool = False) -> dict:
