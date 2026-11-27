@@ -244,7 +244,12 @@ function fillVoiceLine(box){
   const script=state.project.voice_script?.text ?? state.plan?.script ?? frames.map(frame=>(frame.sentences||[]).join(' ')).join('\n\n');
   const words=scriptWordCount(script)?`<small class="episode-voice-word-count">${scriptWordCountLabel(script)}</small>`:'';
   box.innerHTML=`<span class="episode-voice-icon">${working&&!waiting?exportSpinner:voiceIcon}</span><span class="episode-voice-text">${state_==='empty'?'':`<span class="episode-voice-title"><b>${esc(name)}</b>${words}</span>`}${state_!=='empty'&&length?`<span>${clock(length)}</span>`:''}<span class="episode-voice-state">${esc(text)}</span></span>`;
-  if(!synced&&!working)box.append(stepButton('Додати озвучку',openNarrationBinding,state_==='empty'));
+  // a voice that is there but did not pass the check is recognised again, not added again (user, 27 November 2026:
+  // «кнопка пише додати озвучку, хоча озвучка там є»): the saved words are reused, so it takes seconds
+  const heardVoice=state_==='warn'&&report&&(report.source?.asset_id||report.audio?.asset_id);
+  if(!synced&&!working)box.append(heardVoice?stepButton('Розпізнати ще раз',async()=>{
+    try{await startVideoCreation(id,{asset_id:report.source?.asset_id||report.audio?.asset_id,script:narrationScriptValue(state.project,state.plan,job)});await selectProject(id,{view:'editor'});}
+    catch(error){status(error.message,true);}}):stepButton('Додати озвучку',openNarrationBinding,state_==='empty'));
   // a narration being made shows here with its spinner and percent, and nothing offers another voice meanwhile
   // (user, 16 November 2026: «тут порядок наведи»); one answer per paint, so two paints never add two lines
   if(!synced&&!working){

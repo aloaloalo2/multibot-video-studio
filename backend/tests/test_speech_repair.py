@@ -120,3 +120,49 @@ class ScriptPhraseRepairTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WholeSentenceVoiceTest(unittest.TestCase):
+    """The voice comes in whole sentences: a sentence Whisper heard in part was said whole, and under the order policy it
+    does not stop the episode (user, 27 November 2026: «ніяке слово пропущене не може бути… головне послідовність речень»)."""
+    script = ('The patient sits quietly near the open window. '
+              'Glasses for reading are removed before these exercises. '
+              'Both hands remain relaxed on the kitchen table. '
+              'The morning light falls across the wooden floor. '
+              'A small clock ticks softly on the white wall. '
+              'Outside the garden is wet after the night rain.')
+
+    def words(self, keep):
+        out = []
+        for n, sentence in enumerate(speech_repair.speech.planner.split_sentences(self.script)):
+            for i, text in enumerate(sentence.split()):
+                if keep(n, i):
+                    out.append(w(text, round(2 + n * 8 + i * .4, 3), round(2 + n * 8 + i * .4 + .3, 3)))
+        return out
+
+    def test_a_partly_heard_sentence_is_a_note_not_a_stop(self):
+        words = self.words(lambda n, i: n != 1 or i >= 6)   # only «these exercises.» heard of the second sentence
+        report = speech_repair.speech.compare_script(self.script, words, 60, order_only=True)
+        self.assertEqual(report['status'], 'matched')
+        self.assertIn('unheard_words', report['phrases'][1]['issues'])
+        self.assertNotIn('missing_speech', report['phrases'][1]['issues'])
+
+    def test_a_sentence_heard_not_at_all_still_stops(self):
+        words = self.words(lambda n, i: n != 1)
+        report = speech_repair.speech.compare_script(self.script, words, 60, order_only=True)
+        self.assertEqual(report['status'], 'needs_review')
+
+
+class OverallMatchTest(unittest.TestCase):
+    """Under the order policy a voice heard at only about three words in four stops before the montage (27 November 2026)."""
+    script = ' '.join([WholeSentenceVoiceTest.script] * 4)   # over 100 words: a whole voice
+
+    def test_a_voice_heard_poorly_overall_stops(self):
+        words = []
+        for n, sentence in enumerate(speech_repair.speech.planner.split_sentences(self.script)):
+            for i, text in enumerate(sentence.split()):
+                if i % 4 != 3:   # one word in four never heard, in every sentence
+                    words.append(w(text, round(2 + n * 8 + i * .4, 3), round(2 + n * 8 + i * .4 + .3, 3)))
+        report = speech_repair.speech.compare_script(self.script, words, 60, order_only=True)
+        self.assertLess(report['word_match_percent'], speech_repair.speech.MIN_ORDER_MATCH_PERCENT)
+        self.assertEqual(report['status'], 'needs_review')

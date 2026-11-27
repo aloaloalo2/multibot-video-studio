@@ -95,7 +95,8 @@ def creation_status(project, load_job):
         report=analysis.get('report') or {}
         blocking=speech.blocking_issues(bool(report.get('sequence_verification')), order_only=report.get('recognition_policy')=='sentence_order') | {'repeated_speech','out_of_order'}
         blocked=[str(row['number']) for row in report.get('phrases',[]) if blocking.intersection(row.get('issues',[]))]
-        reason='Потрібно уточнити порядок або наявність фраз: '+', '.join(blocked[:8]) if blocked else 'Не вдалося підтвердити наявність і порядок речень'
+        low=report.get('word_match_percent') is not None and float(report['word_match_percent'])<speech.MIN_ORDER_MATCH_PERCENT
+        reason=(f"Розпізнано лише {report['word_match_percent']}% слів сценарію (потрібно від {speech.MIN_ORDER_MATCH_PERCENT:g}%): з озвучкою щось не так, автомонтаж зупинено" if low else None) or ('Потрібно уточнити порядок або наявність фраз: '+', '.join(blocked[:8]) if blocked else 'Не вдалося підтвердити наявність і порядок речень')
         return {'status': 'failed', 'stage': 'recognizing', 'error': job.get('error') or reason}
     direction = director.state(project['id']) or {}
     if direction.get('status') in {'queued', 'running'}:

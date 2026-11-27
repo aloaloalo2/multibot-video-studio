@@ -36,6 +36,12 @@ def tokens(text, locale=None):
 # «soles», «coroid» for «choroid») are corrected to the script automatically; a real gap in the voice,
 # an overlapping or missing boundary, or a weak overall match still go to review.
 MIN_MATCH_PERCENT = 90.0
+# Under the order policy the whole voice still has to be heard well: a voice where only some three words in four were
+# recognised has something wrong with it, and the episode stops before the automatic montage (user, 27 November 2026:
+# «якщо порядок пропущений… або взагалі якогось речення нема… або тільки 75% типу слів розпізнано… Тоді ми
+# зупиняємося… автомонтаж»). Normal voices come out at 97–98%.
+MIN_ORDER_MATCH_PERCENT = 85.0
+ORDER_MATCH_MIN_WORDS = 100   # the share is checked on voices of at least this many script words
 MIN_PHRASE_MATCH_PERCENT = 80
 MAX_UNHEARD_RUN = 3
 BLOCKING_ISSUES = {"missing_boundary", "uncertain_boundary", "missing_speech", "low_phrase_match", "number_difference"}
@@ -144,7 +150,11 @@ def _compare_in_order(script, words, duration, sequence_verified=False, *, order
         if any(estimated[start:end]):
             issues.append("estimated_words")
         if any(position in unheard for position in range(start, end)) or len(matched) * 2 < end - start:
-            issues.append("missing_speech")
+            # The voice always comes in whole sentences: a sentence heard in part was said whole and only Whisper
+            # missed words (user, 27 November 2026: «Озвучка завжди іде мінімум як речення… ніяке слово пропущене не
+            # може бути… головне послідовність речень»). Under the order policy only a sentence heard not at all is
+            # missing; a partly heard one keeps its words' estimated times as a note.
+            issues.append("missing_speech" if not order_only or not matched else "unheard_words")
         if len(matched) * 100 < (end - start) * MIN_PHRASE_MATCH_PERCENT:
             issues.append("low_phrase_match")
         if index in numeric_differences:
@@ -188,7 +198,9 @@ def _compare_in_order(script, words, duration, sequence_verified=False, *, order
     blocking = blocking_issues(sequence_verified, order_only=order_only)
     # Original narration needs evidence that each sentence is present in order.
     # ASR spelling/numerals remain diagnostics; they are not an assembly proof.
-    ready = bool(phrases) and (sequence_verified or order_only or percent >= MIN_MATCH_PERCENT) and all(not blocking.intersection(phrase["issues"]) for phrase in phrases)
+    # a share means something over a whole voice; on a few sentences two Whisper slips already make 66%
+    floor = (MIN_ORDER_MATCH_PERCENT if len(reference) >= ORDER_MATCH_MIN_WORDS else 0) if sequence_verified or order_only else MIN_MATCH_PERCENT
+    ready = bool(phrases) and percent >= floor and all(not blocking.intersection(phrase["issues"]) for phrase in phrases)
     timings = {"duration": duration, "sentences": [{"text": phrase["text"], "start": phrase["start"], "end": phrase["end"]} for phrase in phrases]} if ready else None
     if timings:
         planner.validate_sentence_timings(script, timings["sentences"], duration)
