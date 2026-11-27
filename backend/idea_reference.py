@@ -139,6 +139,7 @@ def start_openings(cid, body, *, source=None, receipt_path=None):
     count = body.get('target_words')
     if type(count) is not int or not 200 <= count <= 15000:
         raise store.StudioError('Вкажіть обсяг від 200 до 15 000 слів')
+    ideas.remember_words(cid, count)
     request_id = body.get('request_id')
     if not isinstance(request_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', request_id):
         raise store.StudioError('Оновіть вікно й повторіть створення зачинів')

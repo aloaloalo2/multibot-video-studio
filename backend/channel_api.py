@@ -101,7 +101,19 @@ def get(self, path, query, *, ensure_idle):
     if ideas_match:
         import episode_ideas
         data = episode_ideas.catalog(ideas_match.group(1)) if query.get('view') == ['topics'] else episode_ideas.read(ideas_match.group(1))
-        return self.json_response(episode_ideas.public(data))
+        data = episode_ideas.public(data)
+        # every window offers the last length the author typed, also over ideas drawn before it (27 November 2026)
+        last = episode_ideas.last_words(ideas_match.group(1))
+        if last and not data.get('project_id'):
+            data['target_words'] = last
+        return self.json_response(data)
+
+    match = re.fullmatch(r"/api/channels/([0-9a-f]{16})/script-words", path)
+    if match:   # the script length every window starts from: the author's last number, else the recent average
+        import episode_ideas
+        store.get_channel_folder(match.group(1))
+        return self.json_response({"target_words": episode_ideas.last_words(match.group(1)) or
+                                   episode_ideas.recommended_length(match.group(1))["target_words"]})
 
     if path == "/api/channels":
         return self.json_response({"channels": store.list_channels()})

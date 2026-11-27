@@ -3581,3 +3581,47 @@ select option{background:#232327;color:#f1f1f2}
 .export-failed{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 14px;border-radius:999px;border:1px solid #6b2d2d;background:#2a1414;color:#ffb4a8;font:500 13px Inter,sans-serif;cursor:pointer;margin-right:8px;white-space:nowrap}
 .export-failed:hover{background:#361919;border-color:#8a3a3a}
 .export-failed:disabled{opacity:.6;cursor:default}
+
+/* Main buttons are white with dark letters (user, 27 November 2026: «замени кнопку цю експорт на білу… І все, що похоже
+   на таку кнопку… на білий. Типу, з темними буквами»). The gold stays on what is not a button: progress, the playhead,
+   checkboxes and switches. */
+button.primary{background:#f4f5f7;border-color:transparent;color:#15161a}
+button.primary:hover:not(:disabled){background:#ffffff}
+:is(#export-open,.glow-action):not(:disabled){box-shadow:0 0 12px rgba(255,255,255,.18),0 0 2px rgba(255,255,255,.35)}
+:is(#export-open,.glow-action):not(:disabled):hover{box-shadow:0 0 20px rgba(255,255,255,.3),0 0 3px rgba(255,255,255,.5)}
+.voice-player-play{background:#f4f5f7;color:#15161a}
+.voice-player-play:hover{background:#ffffff}
+.project-export-go{background:#f4f5f7;color:#15161a}
+.project-export-go:hover,.project-export-go:focus-visible{box-shadow:0 0 10px rgba(255,255,255,.3)}
+
+/* Popups and channel settings in the studio's own dark (user, 27 November 2026: «цей сірий… вже не актуальний… вікно більш
+   таке темніше… строгіше… під дизайн студії»): near-black surfaces like the workspace, quiet borders, a white choice
+   instead of the gold one */
+:root{--ui-surface:#121214;--ui-field:#18181c;--ui-field-border:#2d2e34;--ui-secondary:#1b1b1f}
+.modal-backdrop{background:#000c}
+.modal{background:#111113;border-color:#26272c;box-shadow:0 24px 70px #000d}
+:is(.lang-script-dialog,.lang-script-picker,.lang-voice-dialog,.lang-result-dialog,.lang-thumbnail-dialog,.voice-reference-dialog){background:#111113;border-color:#26272c}
+.settings-section{background:#151518;border-color:#26272c}
+.weights-summary,.universal-properties section{border-color:#2a2b30}
+button.secondary,.modal-actions>button:not(.primary):not(.danger){border-color:#33343a}
+.export-quality .export-quality-option{background:#151518;border-color:#26272c}
+.export-quality .export-quality-option:hover{border-color:#3a3b42}
+.export-quality .export-quality-option:has(input:checked){background:#1a1a1e;border-color:#d9dade}
+.export-quality-option em{color:#c9cbd1}
+:is(.modal,dialog) input[type=radio]::before{background:#f4f5f7}
+:is(.modal,dialog) input[type=radio]:checked{border-color:#f4f5f7;box-shadow:none}
+:is(.modal,dialog) input[type=checkbox]:checked{background:#f4f5f7;border-color:#f4f5f7;box-shadow:none}
+/* the export icon: an arrow out of the frame that steps out a little on hover (27 November 2026) */
+.export-arrow{transition:transform .18s ease-out}
+:is(button,.project-export-go):hover .export-arrow{transform:translate(1.5px,-1.5px)}
+/* the channel settings' cards in the same dark (27 November 2026) */
+.modal .channel-settings-panel .settings-section,.modal .channel-settings-group,.modal .channel-settings-panel .settings-quick-card,
+#modal-body .voice-lab-step,#modal-body .voice-effect-card,.modal #channel-settings-panel-avatar .avatar-hero-card{background:#151518;border-color:#26272c}
+.modal .channel-settings-group>summary:hover{background:#ffffff05}
+.modal .modal-body .weight-row,.modal .channel-settings-panel .weight-row,.modal .voice-player.voice-player-reference{background:#1b1b1f;border-color:#2a2b30}
+.modal .channel-font-menu{background:#151518;border-color:#2d2e34}
+.modal :is(.field-row input:not([type=range]),.field-row select,.pixabay-kind select,.timeline-add-menu summary){background:#18181c;border-color:#2d2e34}
+/* the main white buttons glow on hover (27 November 2026: «Glow при наведенні») */
+:is(#export-open,.glow-action,#project-next-action):not(:disabled):hover,button.primary:not(:disabled):hover{box-shadow:0 0 26px rgba(255,255,255,.42),0 0 6px rgba(255,255,255,.55)}
+button.primary{transition:background-color .15s,box-shadow .2s}
+.project-export-go:hover,.project-export-go:focus-visible{box-shadow:0 0 16px rgba(255,255,255,.45)}

@@ -141,6 +141,9 @@ async function openManualProjectOpenings(project){
   if(state.project?.id!==pid)return;
   const health=await api('/api/health');
   const supported=health.manual_project_openings===true;
+  // the length starts from the author's last number on this channel (27 November 2026: «має підставлятися… значення,
+  // яке ми вказували раніше… навіть якщо я проект удалюю»)
+  const words=await api(`/api/channels/${encodeURIComponent(project.channel_id)}/script-words`).then(d=>Number.isInteger(d?.target_words)?d.target_words:2000,()=>2000);
   const entry=await flushScriptDraft(project);
   if(state.project?.id!==pid||state.navigation!==navigation)return;
   if((entry.text||'').trim())throw Error('У проєкті вже є сценарій.');
@@ -148,7 +151,7 @@ async function openManualProjectOpenings(project){
   if(existing?.project_id===pid&&episodeDraftPending(existing)){renderProject();return;}
   const requestId=crypto.randomUUID();let modalGeneration;
   const current=()=>state.project?.id===pid&&state.navigation===navigation&&state.modalGeneration===modalGeneration;
-  modal('Створити зачини',`<p>${esc(project.name)}</p><label class="episode-word-count">Обсяг сценарію <input id="manual-opening-words" type="number" min="200" max="15000" step="1" value="2000"> слів</label>${supported?'':'<p class="muted">Оновлення буде доступне після завершення поточної роботи студії. Потім оновіть сторінку.</p>'}`,[{
+  modal('Створити зачини',`<p>${esc(project.name)}</p><label class="episode-word-count">Обсяг сценарію <input id="manual-opening-words" type="number" min="200" max="15000" step="1" value="${words}"> слів</label>${supported?'':'<p class="muted">Оновлення буде доступне після завершення поточної роботи студії. Потім оновіть сторінку.</p>'}`,[{
     label:'Створити зачини · Opus',icon:'magic',primary:true,enabled:()=>supported,run:async()=>{
       const input=$('manual-opening-words'),count=Number(input?.value);
       if(!Number.isInteger(count)||count<200||count>15000)throw Error('Задайте від 200 до 15000 слів.');

@@ -222,7 +222,9 @@ def snap_frames(plan: dict, fps) -> dict:
 # those moments and the pauses beside them (user, 26 November 2026: «Аватар 3 буде… відправляти застиглі моменти, якщо
 # це буде тиша… кадри сусідні… довші… обрізати його зліва і справа… на півсекунди… як живий монтаж»). The host is then
 # always talking on screen, HeyGen gets his speech alone, and every transition at his seams plays over living pictures.
-HOST_INSET = .5
+# 0.35 s since 26 November 2026 («підрізай коротше, по 0,35… не по 0,5… Це на майбутнє»); frames placed before keep
+# their own `host_inset`
+HOST_INSET = .35
 HOST_MIN_VISIBLE = 1.5
 
 

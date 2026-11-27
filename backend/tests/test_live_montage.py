@@ -13,7 +13,7 @@ def clip(cid, kind, start, duration, **more):
 
 
 class HostInsetTest(unittest.TestCase):
-    """The host frame moves inside his speech; the neighbours' pictures take the half seconds (26 November 2026)."""
+    """The host frame moves inside his speech; the neighbours' pictures take the 0.35 s at each side (26 November 2026)."""
     def context(self):
         clips = [clip("p_bg", "animation", 0, 4, frame_background=True), clip("p_txt", "text", 2, 2), clip("p_img", "image", 0, 4, keyframes=[{"time": 0, "scale": 1}, {"time": 4, "scale": 1.1}]),
                  clip("h_bg", "animation", 4, 4), clip("h_vid", "video", 4, 4, trim_start=.4),
@@ -33,17 +33,17 @@ class HostInsetTest(unittest.TestCase):
         live_montage.host_inset(ctx, {})
         moves = {a["payload"]["clip_id"]: a["payload"]["start"] for a in ctx.actions if a["type"] == "move_clip"}
         trims = {a["payload"]["clip_id"]: a["payload"] for a in ctx.actions if a["type"] == "trim_clip"}
-        self.assertEqual(moves["h_vid"], 4.52)
-        self.assertEqual((trims["h_vid"]["trim_start"], trims["h_vid"]["duration"]), (.92, 2.96))
-        self.assertEqual(trims["p_img"]["duration"], 4.52)                   # the picture before him lasts longer
-        self.assertEqual((moves["a_img"], trims["a_img"]["duration"]), (7.48, 4.52))   # the one after starts earlier
+        self.assertEqual(moves["h_vid"], 4.36)
+        self.assertEqual((trims["h_vid"]["trim_start"], trims["h_vid"]["duration"]), (.76, 3.28))
+        self.assertEqual(trims["p_img"]["duration"], 4.36)                   # the picture before him lasts longer
+        self.assertEqual((moves["a_img"], trims["a_img"]["duration"]), (7.64, 4.36))   # the one after starts earlier
         self.assertNotIn("a_txt", moves)                                     # a caption keeps its time
-        self.assertEqual(trims["p_txt"]["duration"], 2.52)                  # the text held to the frame's end holds to the new one
+        self.assertEqual(trims["p_txt"]["duration"], 2.36)                  # the text held to the frame's end holds to the new one
         keyframes = next(a["payload"]["patch"]["keyframes"] for a in ctx.actions if a["type"] == "update_clip" and a["payload"]["clip_id"] == "p_img")
-        self.assertEqual(keyframes[-1]["time"], montage_ops.end_time(4.52))   # its move stretches over the longer time
+        self.assertEqual(keyframes[-1]["time"], montage_ops.end_time(4.36))   # its move stretches over the longer time
         self.assertTrue(any(a["type"] == "set_join_transition" for a in ctx.actions))   # set again at the end of the batch
         frames = ctx.new_plan["frames"]
-        self.assertEqual([(f["start"], f["end"]) for f in frames], [(0, 4.52), (4.52, 7.48), (7.48, 12)])
+        self.assertEqual([(f["start"], f["end"]) for f in frames], [(0, 4.36), (4.36, 7.64), (7.64, 12)])
         self.assertEqual(frames[1]["host_inset"], planner.HOST_INSET)
 
     def test_plan_edges_agree_with_the_planner(self):

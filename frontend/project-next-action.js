@@ -37,7 +37,7 @@ const projectNextIcons={
   script:'<path d="M6 3h8l4 4v14H6zM14 3v5h4M9 12h6m-6 4h6"/>',
   narrate:'<rect x="9" y="3" width="6" height="12" rx="3"/><path d="M6 11v1a6 6 0 0 0 12 0v-1M12 18v3M9 21h6"/>',
   create:'<rect x="3" y="4" width="18" height="16" rx="3"/><path d="m10 8 5 4-5 4zM7 4v16M17 4v16"/>',
-  export:'<path d="M12 3v12m-4-4 4 4 4-4M4 15v5h16v-5"/>',
+  export:'<g class="export-arrow"><path d="M13.5 4H20v6.5"/><path d="M20 4l-9 9"/></g><path d="M18.5 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7.5a2 2 0 0 1 2-2h4"/>',   // out of the frame, as motion editors' export (27 November 2026: «скачання вниз… банальний значок»)
 };
 let delegatedWorkflowTarget=null,projectNextBusy=false;
 function heygenVideoEstimate(project, plan, analysis){
@@ -122,7 +122,7 @@ function updateProjectNextAction(){
   if(decision.hidden){box.hidden=true;delegatedWorkflowTarget?.classList.remove('workflow-action-target');delegatedWorkflowTarget=null;return;}
   const key=['hook','openings'].includes(decision.kind)?'hook':['narrate','file'].includes(decision.kind)?'narrate':['create','frames','upload'].includes(decision.kind)?'create':decision.kind==='export'?'export':'script';
   const estimate=['create','frames','upload'].includes(decision.kind)&&typeof heygenVideoEstimate==='function'?heygenVideoEstimate(state.project,state.plan,state.analysis):'';
-  const markup=(decision.kind==='wait'?exportSpinner:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${projectNextIcons[key]}</svg>`)+`<span>${esc(decision.label)}</span>`;
+  const markup=(decision.kind==='wait'?exportSpinner:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${projectNextIcons[key]}</svg>`)+`<span>${fileTagLabel(decision.label)}</span>`;
   // the HeyGen estimate sits on the grey «Створити відео» in the page, not on the gold one in the header (user,
   // 25 November 2026: «в кнопці зеленій… Хейген… це видали і в сіру кнопку засунь»)
   for(const grey of [context.targets.create,context.targets.frames,context.targets.upload]){
@@ -141,6 +141,8 @@ function updateProjectNextAction(){
   if(delegatedWorkflowTarget!==target){delegatedWorkflowTarget?.classList.remove('workflow-action-target');delegatedWorkflowTarget=target;target?.classList.add('workflow-action-target');}
   if(!context.root.classList.contains('workflow-guided'))context.root.classList.add('workflow-guided');
 }
+// the export button says only «Експорт» (user, 27 November 2026: «прибери МП4 взагалі, просто експорт залиш»)
+function fileTagLabel(label){return esc(label).replace(/\s+MP4$/,'');}
 function focusWorkflowScript(root){
   const field=root.querySelector('textarea');if(field){field.scrollIntoView({block:'center',behavior:'smooth'});field.focus();}
 }

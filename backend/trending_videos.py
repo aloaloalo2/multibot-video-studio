@@ -292,6 +292,7 @@ def use_idea(body):
     count, use_thumbnail, request_id = body.get('target_words'), body.get('use_thumbnail'), body.get('request_id')
     if type(count) is not int or not 200 <= count <= 15000:
         raise store.StudioError('Вкажіть обсяг від 200 до 15 000 слів')
+    ideas.remember_words(cid, count)
     if type(use_thumbnail) is not bool:
         raise store.StudioError('Оберіть, чи використовувати прев’ю конкурента')
     if not isinstance(request_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', request_id):

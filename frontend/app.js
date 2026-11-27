@@ -634,7 +634,7 @@ function completionMark(project){
   const coming=(text)=>`<span class="project-auto-next">${exportSpinner}<span>${text}</span></span>`;
   // «Кадри ✓» with a green «Експортувати» beside it, like «Опублікувати» after the export (user, 21 November 2026)
   const exportGo=stage==='frames'?(project.auto_due==='export'?coming('Експорт починається')
-    :'<span class="project-export-go" role="button" tabindex="0" title="Експортувати MP4 з якістю каналу"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14"/></svg><span>Експортувати</span></span>'):'';
+    :'<span class="project-export-go" role="button" tabindex="0" title="Експортувати MP4 з якістю каналу"><svg viewBox="0 0 24 24" aria-hidden="true"><g class="export-arrow"><path d="M13.5 4H20v6.5"/><path d="M20 4l-9 9"/></g><path d="M18.5 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7.5a2 2 0 0 1 2-2h4"/></svg><span>Експортувати</span></span>'):'';
   if(!label)return published?`<span class="project-completion is-published">${published}</span>`:'<span class="project-created">Новий випуск</span>';
   const when=stage==='export'?projectCreationDate(Number(project.last_export_at||project.completion_notice?.at||0)*1000):null;
   // on YouTube: the card says the day the video goes out, «24 листопада», not when it was exported (user, 19 November 2026)

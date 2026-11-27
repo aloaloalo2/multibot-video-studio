@@ -65,3 +65,16 @@ python audio/mix.py --project projects/my-video        # builds music + SFX, mix
 - **The video is longer or shorter than the audio** → `story.duration` must equal the last shot's `end`. Re-run `beats.py --force` or fix by hand.
 - **PyAV/`av` errors from faster-whisper** → the tools decode audio with ffmpeg themselves, so just ensure ffmpeg is on PATH.
 - **Windows paths** → quote paths with spaces. Use `python` (or `py -3`) instead of `python3`.
+
+## Studio pitfalls (from the VideoKey Studio agents, November 2026)
+
+- `cue()` in `engine/core.js` strips non-Latin letters (`[^\w']`), so a Cyrillic word finds the frame's first word. For Russian or Ukrainian words use a time-window `at()` helper.
+- `timeline/words.json` holds numbers as spoken words: `at('64')` or `f.t('30')` silently falls back to the frame's start. Look the number up by its words.
+- Layers of a studio `animation` frame cannot rotate: draw diagonal arrows, rings and sectors as PNG pictures. A blur with a circle mask renders as a square: use a radial PNG.
+- Register shots one by one with `take('eNN', fn)`: an array is not seen by the `studio.py work` map.
+- In a scene lib's `take()`, `TAKE_END` is the end of the whole shot (`sh.end`), not of one of its parts; otherwise `L()` fades elements at every inner seam of a joined take.
+- Run `cut_check` in parts (`--only`, about 15 takes): a full run over 80+ seams once died without output.
+- A sharp zoom jump makes the camera spline overshoot: split the move or pin it with a repeated key.
+- A new PNG in `assets/index.json` resets every frame's review verdict: run `sheets` again over the accepted range.
+- `library.py search` needs every word to match: search with one or two words.
+- `--logic-check` reports false «depth» hits on dip seams and held props: look at the still before changing the scene.

@@ -212,6 +212,7 @@ def start_project(pid, body):
             count = body.get('target_words', ctx['target_words'])
             if type(count) is not int or not 200 <= count <= 15000:
                 raise store.StudioError('Задайте від 200 до 15000 слів')
+            remember_words(cid, body.get('target_words'))
             data = {'id': uuid.uuid4().hex, 'project_id': pid, 'context': ctx,
                     'selected': {'title': project['name']}, 'target_words': count,
                     'sample_count': ctx.get('sample_count', 0), 'manual_topic': True}
@@ -295,6 +296,7 @@ def start_project(pid, body):
                 count = body.get('target_words')
                 if type(count) is int and 200 <= count <= 15000:
                     data['target_words'] = count
+                    remember_words(cid, count)
                 data.update(stage='openings', status='done', cancelled=False, error=None, request_id=body.get('request_id'))
                 data.pop('opening', None)
                 save_draft(cid, data, make_current=False)
@@ -336,10 +338,42 @@ def recent_scripts(cid, projects=None, limit=3):
     return channel_profile.samples(cid, projects, limit, words)
 
 
+def words_path(cid=None):
+    """Where the last script length the author typed is kept: per channel, and the latest of any channel. In the studio's
+    data, apart from the projects, so deleting an episode keeps it."""
+    return store.DATA_ROOT / 'channels' / cid / 'script-words.json' if cid else store.DATA_ROOT / 'script-words.json'
+
+
+def valid_words(count):
+    return type(count) is int and 200 <= count <= 15000
+
+
+def last_words(cid=None):
+    """The last script length the author typed for this channel, else on any channel; None before the first one."""
+    for where in ((cid, None) if cid else (None,)):
+        count = (store.read_json(words_path(where), {}) or {}).get('words')
+        if valid_words(count):
+            return count
+    return None
+
+
+def remember_words(cid, count):
+    """Every window that asks for the script's length remembers the author's number (user, 27 November 2026: «кількість
+    слів запоминалась… брали… просто з останнього числа, яке ми вводили… навіть якщо я проект удалюю»)."""
+    if not valid_words(count):
+        return
+    for where in (cid, None):
+        target = words_path(where)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        store.atomic_json(target, {'words': count, 'at': time.time()})
+
+
 def recommended_length(cid, samples=None):
+    """The length every window offers: the last number the author typed, else the average of recent scripts."""
     samples = recent_scripts(cid) if samples is None else samples
-    return {'target_words': min(15000, max(200, round(sum(s['words'] for s in samples) / len(samples)))) if samples else 2000,
-            'sample_count': len(samples)}
+    last = last_words(cid)
+    average = min(15000, max(200, round(sum(s['words'] for s in samples) / len(samples)))) if samples else 2000
+    return {'target_words': last or average, 'sample_count': len(samples)}
 
 
 def context(cid):
@@ -750,6 +784,8 @@ Use natural question marks and exclamation marks across the set, and one short e
 ALL-CAPS key word or phrase of up to three words in most titles where it strengthens the hook. Never make whole titles
 uppercase or force the same punctuation formula onto all five. Preserve accurate promises. Use previous titles to learn
 language, subject, audience and voice; do not copy their sentence structure or their opening pattern.
+Use plain common words any viewer understands at once, with no idioms or wordplay (a bad English title: «What If You Froze
+Solid?»; a good one: «What If Your Body Froze?»), and a natural Ukrainian reading translation (27 November 2026).
 A strong title combines a concrete recognizable subject, a meaningful stake or useful promise,
 and a specific unanswered detail that makes the viewer curious. Put the strongest words early.
 Choose at least four different editorial angles across the set, for example an overlooked cause,
@@ -896,6 +932,7 @@ def start(cid, body):
             if data.get('project_id') and not reuse: raise store.StudioError('Відкрийте випуск із його картки або виберіть нову тему.')
             count = body.get('target_words', data['target_words'])
             if type(count) is not int or not 200 <= count <= 15000: raise store.StudioError('Вкажіть обсяг від 200 до 15 000 слів')
+            remember_words(cid, body.get('target_words'))
             idea = dict(data['ideas'][index])
             title = store.validated_name(body.get('title', idea['title']))
             if title != idea['title']:
@@ -1238,7 +1275,7 @@ IDEA_TITLES_PROMPT = r"""
 The author has their own idea for the next video of this channel (author_idea below). Write exactly 5 YouTube titles for
 THIS idea: the same subject and promise, played in five different ways, so the author can pick the strongest.
 Use the channel's language and voice as previous_titles show it (they are style examples only, never the topic).
-What a good title is here (the author's own rules, 22 November 2026):
+What a good title is here (the author's own rules, 22 November 2026; plain common words with no idioms or wordplay, 27 November 2026):
 - INFORMATIVE AND CONCRETE: a viewer understands from the title alone what the video is about and what it gives them,
   what it is and what it is for. Name the concrete subject (the object, body part, product, planet, mistake, method),
   never a vague «this», «the secret», «one thing», «something strange» standing in for it.

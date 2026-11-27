@@ -127,6 +127,26 @@ def cover(project: dict) -> Path | None:
     return None
 
 
+COVER_LIMIT = 2 * 1024 * 1024   # YouTube refuses a thumbnail over 2 MB
+
+
+def upload_cover(project: dict, png: Path) -> Path:
+    """The cover as YouTube takes it: the file itself when it is under 2 MB, else a JPG copy squeezed under the limit in the
+    studio's data (the original stays among the versions untouched)."""
+    if png.stat().st_size <= COVER_LIMIT:
+        return png
+    from PIL import Image
+    target = DATA / "projects" / project["id"] / "preview" / "cover-upload.jpg"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with Image.open(png) as image:
+        picture = image.convert("RGB")
+        for quality in (92, 88, 84, 80, 75, 70, 60, 50):
+            picture.save(target, "JPEG", quality=quality, optimize=True, progressive=True)
+            if target.stat().st_size <= COVER_LIMIT:
+                break
+    return target
+
+
 def stop() -> bool:
     pid = read_json(SERVE / "server.json", {}).get("pid")
     if not pid:
@@ -300,7 +320,9 @@ def prepare(ref: str) -> dict:
     # names unique to the episode and the cover's version: a browser never hands Studio another episode's cached cover
     # (19 November 2026: Titan's upload first got the black-hole film's cover from the cache)
     video_name = f"video-{project['id']}.mp4"
-    cover_name = f"cover-{project['id']}-{int(png.stat().st_mtime)}.png" if png else None
+    if png:
+        png = upload_cover(project, png)
+    cover_name = f"cover-{project['id']}-{int(png.stat().st_mtime)}{png.suffix}" if png else None
     base = serve({video_name: mp4, **({cover_name: png} if png else {})})
     (DATA / "projects" / project["id"] / "publishing.json").write_text(json.dumps({"at": time.time()}), encoding="utf-8")
     take(project["id"])   # off the queue: the card now reads «Публікація»
