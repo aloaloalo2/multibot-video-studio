@@ -60,7 +60,8 @@ class MontageContextTest(unittest.TestCase):
         commands=[s for s in result.splitlines() if s.startswith('python3 ')]
         checks=[s for s in result.splitlines() if s.startswith('nice -n 10 node ')]
         # the pictures are looked at once at the end of the film: a batch places its frames and runs the free checks
-        self.assertEqual(len(commands),1);self.assertEqual(len(checks),2)
+        self.assertEqual(len(commands),1);self.assertEqual(len(checks),3)
+        self.assertTrue(any("--jump-check" in c for c in checks))
         self.assertIn('4,7',commands[0])
         for command in commands+checks:
             self.assertNotIn('&&',command)

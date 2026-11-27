@@ -144,6 +144,6 @@ def commands(project, numbers, *, repair=False):
             span = (f' --from {min(t[0] for t in times):.2f} --to {max(t[1] for t in times):.2f}'
                     if times and all(isinstance(t[0], (int, float)) and isinstance(t[1], (int, float)) for t in times) else '')
             render = f'nice -n 10 node {shlex.quote(str(store.YOUTUBE_ROOT / store.razgon_rel() / "render.mjs"))} --project {shlex.quote(str(linked))}'
-            guide.extend([f'{render} --logic-check{span}', f'{render} --text-check{span}',
+            guide.extend([f'{render} --logic-check{span}', f'{render} --text-check{span}', f'{render} --jump-check{span}',
                           'Виправ лише те, що вони знайшли. Картинок кадрів не переглядай і mark не став.'])
     return '\n'.join(guide) + '\n'
