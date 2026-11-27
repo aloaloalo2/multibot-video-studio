@@ -109,6 +109,19 @@ class MetadataTest(unittest.TestCase):
                 metadata.save_generated(self.project,self.value,self.script,model)
         model.assert_not_called()
 
+    def test_hashtags_are_one_to_nine_single_words(self):
+        # the author, 27 November 2026: «хештеги… мусять бути 1 словом. строго 1 слово», «від 1 до 9»
+        text = 'I spent a week finding out what is really in that old garage. Here is what I learned.\n\n'
+        for line in ('no hashtags here', ' '.join(f'#word{chr(97 + i)}' for i in range(10)), '#garage #old_cars #history',
+                     '#garage #old-cars #history', '#garage #history #findings!'):
+            with self.subTest(line=line), self.assertRaises(ValueError):
+                metadata.save(self.project, {**self.value, 'description': text + line}, self.script)
+        self.assertFalse(metadata.path(self.project).exists())
+        nine = ' '.join(['#garage', '#history', '#findings', '#cars', '#rust', '#tools', '#barn', '#engines', '#chrome'])
+        metadata.save(self.project, {**self.value, 'description': text + '#garage'}, self.script)
+        metadata.save(self.project, {**self.value, 'description': text + nine}, self.script)
+        self.assertTrue(metadata.path(self.project).exists())
+
     def test_invalid_tags_cannot_publish_partial_file(self):
         # 4 to 15 tags, each one word (the author, 18 November 2026)
         for tags in ([], ['one'], ['same'] * 4, ['one,two', 'three', 'four', 'five'], ['space', 'deep space', 'stars', 'moon'], ['a1'] * 16):
@@ -267,7 +280,7 @@ class DescriptionRuleTest(unittest.TestCase):
         good = 'I went looking for the oldest garage find. It took three weekends.\n\n#garage #finds #history'
         self.assertEqual(metadata.validate(self.value(good), self.TITLE)['description'], good)
         for bad in ('Only text without hashtags at all.', 'Text.\n\nno hashtags here', 'Text with #tag inside.\n\n#a #b',
-                    'Text.\n\nPurpose paragraph.\n\n#a #b', 'Text.\n\n#onlyone'):
+                    'Text.\n\nPurpose paragraph.\n\n#a #b', 'Text.\n\n' + ' '.join('#w' + c * 2 for c in 'abcdefghij')):
             with self.assertRaises(ValueError):
                 metadata.validate(self.value(bad), self.TITLE)
 

@@ -22,8 +22,10 @@ happens and why), so a reader knows exactly what they will learn; no vague prais
 subscribe only if it sounds natural here. No stock phrases that fit any video («Видео носит познавательный характер»,
 «Спасибо, что смотрите», «This video is for informational purposes»), no claims beyond the script, no summary of the
 whole script, no links, sources, timestamps or keyword lists. For a health topic one of the sentences may briefly say
-that the video does not replace a doctor's advice. Then an empty line and one line of 3 hashtags for this video in the
-channel language, each one word without spaces (for example #чёрныедыры #космос #гравитационныеволны).
+that the video does not replace a doctor's advice. Then an empty line and one line of 1 to 9 hashtags for this video in
+the channel language. Every hashtag is strictly ONE real word (the author, 27 November 2026: «хештеги… мусять бути 1
+словом. строго 1 слово», then «від 1 до 9»): never two or more words glued together, so #космос #Юпитер #гравитация,
+never #чёрныедыры or #гравитационныеволны.
 tags (the author, 18 November 2026): from 4 to 15 tags in the channel language, every tag exactly ONE word (no spaces,
 no phrases). The first tag is the channel's niche itself (for a space channel «космос»); the second is a synonym of that
 niche («вселенная»). Then broad, common words people search for in this niche (космос, планеты, звёзды, Юпитер, Марс),
@@ -98,8 +100,8 @@ def validate(value, title):
     # 2-3 sentences of the person who made the video, then one line of hashtags (the author, 17 November 2026)
     # 120 words: three French or Spanish sentences run past 80 (19 November 2026, an 87-word description was refused)
     if (len(parts) != 2 or not 1 <= len(sentences) <= 4 or len(text.split()) > 120 or re.search(r'https?://|#', text)
-            or not 2 <= len(hashtags) <= 5 or not all(re.fullmatch(r'#[^\s#]{2,40}', h) for h in hashtags)):
-        raise ValueError('Потрібен короткий опис на 2-3 речення і рядок хештегів під ним. Сценарій збережено.')
+            or not 1 <= len(hashtags) <= 9 or not all(re.fullmatch(r'#[^\W_]{2,30}', h) for h in hashtags)):
+        raise ValueError('Потрібен короткий опис на 2-3 речення і під ним рядок від 1 до 9 хештегів, кожен одним словом. Сценарій збережено.')
     # 4 to 15 one-word tags, the niche first (the author, 18 November 2026)
     if (not isinstance(tags, list) or not 4 <= len(tags) <= 15
             or not all(isinstance(t, str) and re.fullmatch(r'[^\s,#]{2,30}', t.strip()) for t in tags)
