@@ -348,6 +348,15 @@ class ProductionTest(unittest.TestCase):
             state=store.production_state(self.project)
         self.assertEqual(state['quality'],{'passed':False})
 
+    def test_frame_briefs_ask_for_smooth_code_motion(self):
+        """27 November 2026: a jumping astronaut, screen-fixed names and a dashed ring on a fixed spot in Karl's frame 1."""
+        with patch.object(store, "get_channel_folder", return_value=Path(self.tmp.name)), \
+                patch.object(store, "read_json", return_value={}):
+            text = production.photo_brief(self.project, REQUEST)
+        self.assertIn(production.motion_direction.SMOOTH_CODE, text)
+        self.assertIn("toScreen", production.motion_direction.SMOOTH_CODE)
+        self.assertIn("пунктирних кіл не став", production.motion_direction.SMOOTH_CODE)
+
     def test_accents_follow_the_channel_setting(self):
         with patch.object(store, "get_channel_folder", return_value=Path(self.tmp.name)), \
                 patch.object(store, "read_json", return_value={"accents": True}):

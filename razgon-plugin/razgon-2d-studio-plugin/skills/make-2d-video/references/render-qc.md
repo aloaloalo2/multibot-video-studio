@@ -68,6 +68,8 @@ python audio/mix.py --project projects/my-video        # builds music + SFX, mix
 
 ## Studio pitfalls (from the VideoKey Studio agents, November 2026)
 
+- Motion is one continuous path (27 November 2026, a jumping astronaut in a frame): never tie a figure to a point that jumps (the pen between strokes, the next letter); ease it between fixed points. A change of pose starts where the last one ended, at the same x, y and height. Bobs use sin² or ease, never abs(sin). Dust and sparks start at the event's real time, not at `t - 0.05` every frame.
+- A label that names a figure or an object stands at its world point through `toScreen(cam, x, y)` and moves with it and the camera; a screen-corner label over a moving world looks detached. Highlights (rings, frames) only when the viewer must find something, on the object itself and following it; no decorative dashed rings.
 - `cue()` in `engine/core.js` strips non-Latin letters (`[^\w']`), so a Cyrillic word finds the frame's first word. For Russian or Ukrainian words use a time-window `at()` helper.
 - `timeline/words.json` holds numbers as spoken words: `at('64')` or `f.t('30')` silently falls back to the frame's start. Look the number up by its words.
 - Layers of a studio `animation` frame cannot rotate: draw diagonal arrows, rings and sectors as PNG pictures. A blur with a circle mask renders as a square: use a radial PNG.
