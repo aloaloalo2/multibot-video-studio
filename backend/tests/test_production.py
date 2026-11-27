@@ -356,6 +356,7 @@ class ProductionTest(unittest.TestCase):
         self.assertIn(production.motion_direction.SMOOTH_CODE, text)
         self.assertIn("шару того, що він називає", production.motion_direction.SMOOTH_CODE)
         self.assertIn("пунктирних кіл не став", production.motion_direction.SMOOTH_CODE)
+        self.assertIn("одна пласка площина", production.motion_direction.SMOOTH_CODE)
         self.assertIn("jump-check", production.motion_direction.SMOOTH_CODE)
         import montage_context
         self.assertIn("--jump-check", Path(montage_context.__file__).read_text())
