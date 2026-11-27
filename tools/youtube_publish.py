@@ -83,11 +83,19 @@ def metadata(folder: Path) -> dict:
     return {"titles": titles, "title": titles[0], "description": parts["Описание"], "tags": tags}
 
 
+NO_ATTRIBUTION = ("без зазначення автора", "no attribution")
+
+
 def music_credits(pid: str) -> list[str]:
-    """«Title, Artist» of the music-library tracks the film's music used (backend/music_library.remember)."""
+    """«Title, Artist» of the music-library tracks the film's music used (backend/music_library.remember). A track whose
+    licence asks for attribution is always named; one «без зазначення автора» only now and then, about every other film,
+    the same choice for a film each time (user, 27 November 2026: «рандомно — якщо не треба вказувати, то можна не вказувати»)."""
+    import random
     ids = read_json(DATA / "projects" / pid / "music-tracks.json", []) or []
     rows = {row.get("id"): row for row in read_json(DATA / "music-library" / "catalog.json", []) or [] if isinstance(row, dict)}
-    return [f"{rows[i]['title']}, {rows[i]['artist']}" for i in ids if i in rows]
+    optional = random.Random(pid).random() < 0.5
+    return [f"{rows[i]['title']}, {rows[i]['artist']}" for i in ids if i in rows
+            and (optional or not any(m in str(rows[i].get("license", "")).casefold() for m in NO_ATTRIBUTION))]
 
 
 def with_credits(description: str, credits: list[str]) -> str:

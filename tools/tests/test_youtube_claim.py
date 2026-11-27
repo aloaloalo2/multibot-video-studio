@@ -71,3 +71,29 @@ class MusicCreditsTest(unittest.TestCase):
         self.assertEqual(y.with_credits(out, ["Pulsar, The Grey Room / Density & Time"]), out)   # once
         self.assertTrue(y.with_credits("Мы посчитали свет.", ["A, B"]).endswith("Музыка: A, B (YouTube Audio Library)"))
         self.assertEqual(y.with_credits("Text", []), "Text")
+
+
+class OptionalCreditsTest(unittest.TestCase):
+    """27 November 2026: «рандомно — якщо не треба вказувати, то можна не вказувати»."""
+
+    def test_attribution_free_tracks_are_named_in_some_films_only(self):
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as folder:
+            data = Path(folder)
+            (data / "music-library").mkdir()
+            (data / "music-library" / "catalog.json").write_text(json.dumps([
+                {"id": "free", "title": "Pulsar", "artist": "Grey Room", "license": "YouTube Audio Library, без зазначення автора"},
+                {"id": "cc", "title": "Dawn", "artist": "Someone", "license": "Creative Commons Attribution 4.0"}]))
+            named = []
+            for n in range(40):
+                pid = f"{n:024d}"
+                (data / "projects" / pid).mkdir(parents=True)
+                (data / "projects" / pid / "music-tracks.json").write_text(json.dumps(["free", "cc"]))
+                with patch.object(y, "DATA", data):
+                    credits = y.music_credits(pid)
+                    self.assertEqual(credits, y.music_credits(pid))            # the same choice for a film every time
+                self.assertIn("Dawn, Someone", credits)                         # attribution required: always
+                named.append("Pulsar, Grey Room" in credits)
+            self.assertTrue(any(named) and not all(named))                      # optional: some films, not all
