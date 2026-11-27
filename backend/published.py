@@ -57,6 +57,7 @@ def check(item: dict) -> dict | None:
     """The saved mark of a listed project, written once when its folder first shows the blue tag."""
     saved = store.read_json(path(item['id']), None)
     if isinstance(saved, dict) and saved.get('at'):
+        cleared(item['id'], saved)
         return saved
     folder = item.get('episode_path')
     if folder and blue(Path(folder)):
@@ -65,8 +66,21 @@ def check(item: dict) -> dict | None:
             store.atomic_json(path(item['id']), saved)
         except OSError:
             pass
+        cleared(item['id'], saved)
         return saved
     return None
+
+
+_CLEARING: set = set()
+
+
+def cleared(pid: str, saved: dict) -> None:
+    """A published film's CapCut transitions leave the shared cache once (capcut_cleanup.py, 27 November 2026)."""
+    if saved.get('capcut_cleared') or pid in _CLEARING:
+        return
+    _CLEARING.add(pid)
+    import capcut_cleanup
+    capcut_cleanup.after_publish(pid)
 
 
 STARTING_MINUTES = 10   # a session opened by the button has this long to start waiting before another is opened

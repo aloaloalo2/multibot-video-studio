@@ -183,6 +183,7 @@ def _side(render, project: dict, project_file: Path, layers: list[dict], start: 
     background = project.get("background", "#101114")
     key = _key("s", a, count, width, height, fps, background, layers, _sources_stamp(layers, project_file))
     path = cache_dir() / f"side-{key}.mp4"
+    _note(project_file, path)
     empty = path.with_suffix(".none")
     if empty.exists():
         _used(empty)
@@ -237,6 +238,23 @@ def _strip(layers: list[dict], drop: set[str], top_z: float | None = None) -> li
         if clips:
             out.append({**layer, "z": z, "clips": clips})
     return out
+
+
+def _note(project_file, path: Path) -> None:
+    """The episode's own list of the CapCut renders it drew or used (`projects/<id>/capcut/used.txt`), so publishing it
+    can drop them from the shared cache at once (user, 27 November 2026: «якщо опублікований ролик, варто думаю очистити
+    одразу переходи»; backend/capcut_cleanup.py). Never breaks the render."""
+    try:
+        import re
+        match = re.search(r"/projects/([0-9a-f]{24})/", str(Path(project_file).resolve()))
+        if not match:
+            return
+        ledger = data_root() / "projects" / match.group(1) / "capcut" / "used.txt"
+        ledger.parent.mkdir(parents=True, exist_ok=True)
+        with open(ledger, "a", encoding="utf-8") as out:
+            out.write(path.name + "\n")
+    except OSError:
+        pass
 
 
 def _used(path: Path) -> None:
@@ -300,6 +318,7 @@ def _transition(render, project, project_file, clip, width, height, fps) -> str:
     key = _key("t", clip["capcut_type"], start, duration, width, height, fps, project.get("background"), a_layers, b_layers,
                _sources_stamp(a_layers + b_layers, project_file))
     path = cache_dir() / f"transition-direct-capcut-{key}{'.mp4' if PREVIEW else '.mov'}"
+    _note(project_file, path)
     if path.exists():
         _used(path)
         return str(path)
@@ -337,6 +356,7 @@ def _content(render, project, project_file, clip, layer_z, width, height, fps) -
     key = _key("c", clip["capcut_effect"], start, duration, width, height, fps, project.get("background"), below,
                _sources_stamp(below, project_file))
     path = cache_dir() / f"transition-direct-capcut-{key}.mov"
+    _note(project_file, path)
     if path.exists():
         _used(path)
         return str(path)
