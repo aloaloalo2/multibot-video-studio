@@ -15,7 +15,7 @@ A background drawing stops by itself when the agent that started it is gone (a p
   python3 tools/codex_image.py --prompt P.txt --out sheet_A.png --background
   python3 tools/codex_image.py --wait sheet_A.png sheet_B.png
 """
-import argparse, datetime, json, os, re, subprocess, sys, time, urllib.error, urllib.request
+import argparse, datetime, json, os, re, shutil, subprocess, sys, time, urllib.error, urllib.request
 from pathlib import Path
 
 # a bare «429» is not a limit: Codex ends its log with «tokens used» and a count such as «26 429» (17 November 2026
@@ -255,7 +255,9 @@ def draw(a) -> None:
     text = prompt.read_text(encoding="utf-8").strip() + (
         f'\n\nUse the built-in image generation tool and make exactly one image. Save it in the current working directory as '
         f'"{out.name}" and reply only with the saved path.')
-    command = [CODEX, "exec", "-s", "workspace-write", "--skip-git-repo-check", "-C", str(out.parent)]
+    # --ephemeral: no session rollout in ~/.codex/sessions (each kept its picture inside, 986 of them took 4 GB by 27
+    # November 2026; user: «може є кеш кодекса картинки?»), and the copy Codex keeps in generated_images goes below
+    command = [CODEX, "exec", "--ephemeral", "-s", "workspace-write", "--skip-git-repo-check", "-C", str(out.parent)]
     for ref in a.ref:
         command += ["-i", str(Path(ref).resolve())]
 
@@ -289,6 +291,8 @@ def draw(a) -> None:
         if process.poll() is None:
             process.kill()
     out.with_suffix(".log.txt").write_text(stdout + stderr, encoding="utf-8")
+    if out.is_file():
+        drop_codex_copy(stdout + stderr)
     if not out.is_file() and LIMIT.search(stdout + stderr) and instead_of_codex():
         try:
             limit_marker().write_text(json.dumps({"at": time.time(), "reset": reset_time(stdout + stderr)}), encoding="utf-8")
@@ -311,6 +315,16 @@ def draw(a) -> None:
     finish("done")
     print(out)
 
+
+
+def drop_codex_copy(log: str) -> None:
+    """Codex keeps its own copy of every picture in ~/.codex/generated_images/<session>; ours is saved in the project."""
+    match = re.search(r"session id:\s*([0-9a-f-]{36})", log)
+    if not match:
+        return
+    folder = Path.home() / ".codex" / "generated_images" / match.group(1)
+    if folder.is_dir():
+        shutil.rmtree(folder, ignore_errors=True)
 
 def main() -> None:
     a = ap.parse_args()
