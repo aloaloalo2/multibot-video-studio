@@ -354,7 +354,7 @@ class ProductionTest(unittest.TestCase):
                 patch.object(store, "read_json", return_value={}):
             text = production.photo_brief(self.project, REQUEST)
         self.assertIn(production.motion_direction.SMOOTH_CODE, text)
-        self.assertIn("toScreen", production.motion_direction.SMOOTH_CODE)
+        self.assertIn("прикріплений до фону", production.motion_direction.SMOOTH_CODE)
         self.assertIn("пунктирних кіл не став", production.motion_direction.SMOOTH_CODE)
 
     def test_accents_follow_the_channel_setting(self):
