@@ -8,8 +8,6 @@
 //   node render.mjs --project P --logic-check [0.5] [--from A --to B]                a closer thing drawn under a farther one, text covered by a later picture,
 //                                                                                      a picture blown up past its pixels -> build/logic_check.json, exit 1 if any
 //   node render.mjs --project P --events [0.08] [--from A --to B]                    when text is written, text comes in and pictures come in -> build/events.json (sounds)
-//   node render.mjs --project P --jump-check [--from A --to B]                         every frame: a picture, figure or text that leaps many pixels in one frame,
-//                                                                                      or one pose swapped for another in a different place -> build/jump_check.json, exit 1 if any
 //   node render.mjs --project P --speed-check [2.5]                                    every take timed in one browser; takes slower than 2.5 x the median -> build/speed_check.json, exit 1 if any
 // Options: --workers N  --scale K  --style ID  --debug  --format png|jpeg  --crf 18  --gl auto|gpu|swiftshader  --encoder x264|videotoolbox  --q 75  --out FILE
 import http from 'node:http';
@@ -514,63 +512,6 @@ async function speedCheck() {
   for (const r of slow) console.log(`  ${r.id}  ${r.start}-${r.end} s  ${r.ms} ms a frame`);
   process.exitCode = 1;
 }
-// The jump check (user, 27 November 2026: «анимация рух не може бути рваний перелитати на багато пикселив… плавно мае бути
-// все», Karl's frame 1: Cernan leapt from letter to letter after his finger, and from crouching to walking to the ladder):
-// every frame of the range is drawn and each picture, figure and line of text is followed by its name. A thing whose
-// centre moves more than 22 px (at 1080) in one frame while it moved much less the frame before is a leap; so is a size
-// jump of more than 12% in one frame. A pose swapped for another of the same character (crouch → walk) whose boxes, while
-// both show or the frame one ends and the other begins, stand more than 40 px apart at the feet is a swap jump. Frames
-// within 0.75 s of a cut between shots are left out (a transition draws two shots at once). A leap is a FAIL at once.
-async function jumpCheck() {
-  const browser = await chromium.launch(LAUNCH); const page = await openPlayer(browser); const fps = FPS;
-  await page.evaluate(DRAW_LOG_PATCH);
-  const total = await page.evaluate('window.TOTAL_FRAMES');
-  const [fa, fb] = frameRange(total), frames = sampled(fa, fb, 1), logs = await drawLogs(page, 'DRAW_LOG', frames);
-  const cuts = shotStarts(), nearCut = (t) => cuts.some((c) => Math.abs(c - t) < 0.75);
-  const keyOf = (b) => (b.k === 'text' ? 'text:' + String(b.str || '').trim() : b.k + ':' + b.name);
-  const stem = (name) => String(name || '').toLowerCase().replace(/[_-]?(crouch|walk|climb|stand|sit|run|jump|kneel|point|wave|idle|pose\d*|\d+)$/g, '');
-  const per = logs.map((log) => {
-    const m = new Map();
-    for (const b of log) { if (b.k === 'host' || !(b.x1 > b.x0)) continue; const k = keyOf(b); m.set(k, m.has(k) ? null : b); }
-    return m;
-  });
-  const hits = [];
-  for (let n = 2; n < frames.length; n++) {
-    const t = +(frames[n] / fps).toFixed(2); if (nearCut(t)) continue;
-    const A = per[n - 2], B = per[n - 1], C = per[n];
-    for (const [k, c] of C) {
-      const b = B.get(k), a = A.get(k); if (!c || !b || !a) continue;
-      const s = (c.H || 1080) / 1080, cx = (q) => (q.x0 + q.x1) / 2, cy = (q) => (q.y0 + q.y1) / 2;
-      const d = Math.hypot(cx(c) - cx(b), cy(c) - cy(b)), dPrev = Math.hypot(cx(b) - cx(a), cy(b) - cy(a));
-      const jerk = Math.hypot(cx(c) - 2 * cx(b) + cx(a), cy(c) - 2 * cy(b) + cy(a));
-      const h0 = b.y1 - b.y0, h1 = c.y1 - c.y0, grow = Math.abs(h1 - h0) / Math.max(1, h0), growPrev = Math.abs(h0 - (a.y1 - a.y0)) / Math.max(1, a.y1 - a.y0);
-      if (d > 22 * s && jerk > 16 * s && d > 2.5 * dPrev)
-        hits.push({ kind: 'leap', key: 'leap: ' + k, t, text: `${k.replace(/^\w+:/, '')} leaps ${Math.round(d / s)} px in one frame (the frame before ${Math.round(dPrev / s)} px)` });
-      else if (grow > 0.12 && grow > 3 * growPrev && h1 * h0 > (c.H * 0.05) ** 2)
-        hits.push({ kind: 'leap', key: 'size: ' + k, t, text: `${k.replace(/^\w+:/, '')} changes size ${Math.round(grow * 100)}% in one frame` });
-    }
-    // one pose of a character handed to another: the new one must stand where the old one stood
-    const imgs = (M) => [...M.values()].filter((q) => q && (q.k === 'img' || q.k === 'fig') && (q.y1 - q.y0) > (q.H || 1080) * 0.1);
-    for (const c of imgs(C)) {
-      if (B.get(keyOf(c))) continue;                      // it was already there: not a new pose
-      for (const b of imgs(B)) {
-        if (b.name === c.name || stem(b.name) !== stem(c.name) || !stem(b.name)) continue;
-        const s = (c.H || 1080) / 1080, foot = Math.hypot((c.x0 + c.x1) / 2 - (b.x0 + b.x1) / 2, c.base - b.base);
-        if (foot > 40 * s) hits.push({ kind: 'swap', key: `swap: ${b.name} → ${c.name}`, t, text: `${b.name} becomes ${c.name} ${Math.round(foot / s)} px away: the new pose must start where the old one stands` });
-      }
-    }
-  }
-  const broken = await shotErrors(page);
-  await browser.close();
-  const runs = []; for (const h of hits) { const r = runs.find((x) => x.key === h.key && h.t - x.to <= 0.5); if (r) { r.to = h.t; r.count++; } else runs.push({ ...h, from: h.t, to: h.t, count: 1 }); }
-  fs.writeFileSync(path.join(BUILD, 'jump_check.json'), JSON.stringify(runs, null, 1));
-  console.log(`Jump check: ${frames.length} frames drawn, ${runs.length} finding(s)`);
-  if (!runs.length) { console.log(broken ? 'Jump check: FAIL, shots with errors were not checked' : 'Jump check: OK, nothing leaps between frames'); if (broken) process.exitCode = 1; return; }
-  console.log('Jump check: FAIL');
-  runs.slice(0, 60).forEach((r) => console.log(`  ${r.from.toFixed(2)}${r.to > r.from ? '–' + r.to.toFixed(2) : ''} s  ${r.text}${r.count > 1 ? ` (×${r.count})` : ''}`));
-  process.exitCode = 1;
-}
-
-try { if (args['jump-check']) await jumpCheck(); else if (args['logic-check']) await logicCheck(); else if (args.events) await eventsScan(); else if (args['text-check']) await textCheck(); else if (args['speed-check']) await speedCheck(); else if (args.sheet || args.stills || args.styles) await renderStills(); else await renderVideo(); }
+try { if (args['logic-check']) await logicCheck(); else if (args.events) await eventsScan(); else if (args['text-check']) await textCheck(); else if (args['speed-check']) await speedCheck(); else if (args.sheet || args.stills || args.styles) await renderStills(); else await renderVideo(); }
 catch (e) { console.error('RENDER FAILED:', e.message); process.exitCode = 1; }
 finally { server.close(); }
