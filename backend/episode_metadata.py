@@ -18,12 +18,12 @@ he typed it under his own video (the author, 27 November 2026: «опис має
 звернення, типу він писав цей опис, і дуже прямим текстом без води»): «я», «мы» for the channel, «вы» to the viewer; very
 direct plain text, every sentence carries something concrete from this video, no warm-up, no filler, no general words; no
 made-up personal stories or experiences, the first person speaks only about this video and its subject; not a template
-(the author, 17 November 2026: «два-три речення, знизу хештеги… як звичайна людина написала»). 2-3 plain sentences in the
+(the author, 17 November 2026: «два-три речення, знизу хештеги… як звичайна людина написала»). 2-4 plain sentences in the
 channel language about what this video shows and why it is worth watching, in everyday words. The description must be
 concrete, never only pleasant (the author, 18 November 2026: «описання має бути конкретне… обов'язково»): name what this
 video actually tells, the subject itself and one or two specific things from the script (a fact, a number, a place, what
-happens and why), so a reader knows exactly what they will learn; no vague praise such as «a fascinating journey»; a short invitation to
-subscribe only if it sounds natural here. No stock phrases that fit any video («Видео носит познавательный характер»,
+happens and why), so a reader knows exactly what they will learn; no vague praise such as «a fascinating journey»; whether to ask the viewer to subscribe is
+given below in this description's own shape (the author, 27 November 2026: «2-4… інколи просити підписатись додатково»). No stock phrases that fit any video («Видео носит познавательный характер»,
 «Спасибо, что смотрите», «This video is for informational purposes»), no claims beyond the script, no summary of the
 whole script, no links, sources, timestamps or keyword lists. For a health topic one of the sentences may briefly say
 that the video does not replace a doctor's advice. Then an empty line and one line of 1 to 9 hashtags for this video in
@@ -60,7 +60,7 @@ def recent_descriptions(cid, skip=None, limit=6):
 
 # Every description gets its own shape, picked at random for the film (the author, 27 November 2026: «так само додавати
 # треба рандомно то так то ні емодзі», «шаблонність хочу прибрати, щоб кожен опис був унікальний»): emoji or none,
-# two or three sentences, how it opens, how many hashtags. The same film keeps the same shape when asked again.
+# two to four sentences, a call to subscribe now and then, how it opens, how many hashtags. The same film keeps the same shape when asked again.
 OPENINGS = ('Start with the most surprising fact or number from the script.',
             'Start with a short question the viewer may have asked themselves.',
             'Start with the one thing this video sorts out that people often get wrong.',
@@ -73,13 +73,16 @@ def shape(seed) -> str:
     import random
     rng = random.Random(str(seed or random.random()))
     emoji = rng.choice((0, 0, 1, 1, 2))
-    sentences = rng.choice((2, 3))
+    sentences = rng.choice((2, 3, 4))
+    subscribe = rng.random() < 0.4
     hashtags = rng.randint(1, 9)
     words = {0: 'No emoji at all.', 1: 'Exactly one emoji that fits the subject, placed where a person would put it.',
              2: 'Two emoji that fit the subject, placed naturally (not both at the end, not as bullet points).'}[emoji]
     return (f'\nTHIS DESCRIPTION\'S OWN SHAPE (picked at random so no two descriptions look alike; follow it): '
             f'{sentences} sentences, in the channel author\'s own first-person voice to the viewer. {rng.choice(OPENINGS)} {words} Exactly {hashtags} hashtag'
-            f'{"" if hashtags == 1 else "s"} on the hashtag line.')
+            f'{"" if hashtags == 1 else "s"} on the hashtag line. '
+            + ('One of the sentences asks the viewer to subscribe, in the author\'s own words for this video.' if subscribe
+               else 'No call to subscribe this time.'))
 
 
 def prompt(cid=None, skip=None):
@@ -126,8 +129,9 @@ def validate(value, title):
     hashtags = tags_line.split()
     sentences = [x for x in re.split(r'(?<=[.!?…])\s+', text.strip()) if x.strip()]
     # 2-3 sentences of the person who made the video, then one line of hashtags (the author, 17 November 2026)
-    # 120 words: three French or Spanish sentences run past 80 (19 November 2026, an 87-word description was refused)
-    if (len(parts) != 2 or not 1 <= len(sentences) <= 4 or len(text.split()) > 120 or re.search(r'https?://|#', text)
+    # 120 words: three French or Spanish sentences run past 80 (19 November 2026, an 87-word description was refused);
+    # 150 and five sentences since descriptions may have four (27 November 2026)
+    if (len(parts) != 2 or not 1 <= len(sentences) <= 5 or len(text.split()) > 150 or re.search(r'https?://|#', text)
             or not 1 <= len(hashtags) <= 9 or not all(re.fullmatch(r'#[^\W_]{2,30}', h) for h in hashtags)):
         raise ValueError('Потрібен короткий опис на 2-3 речення і під ним рядок від 1 до 9 хештегів, кожен одним словом. Сценарій збережено.')
     # 4 to 15 one-word tags, the niche first (the author, 18 November 2026)
