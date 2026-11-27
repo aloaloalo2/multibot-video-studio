@@ -37,7 +37,8 @@ def validate(code) -> str:
 
 def _modules() -> Path:
     import sys
-    sys.path.insert(0, str(store.APP_ROOT / "tools"))
+    if str(store.APP_ROOT / "tools") not in sys.path:
+        sys.path.append(str(store.APP_ROOT / "tools"))   # after backend, see app.razgon_kit_at_start
     try:
         import razgon_sync
         home = razgon_sync.home()

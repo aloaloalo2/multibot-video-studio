@@ -336,7 +336,7 @@ def update_studio_settings(settings):
 
 def pixabay_module():
     if str(store.APP_ROOT / "tools") not in sys.path:
-        sys.path.insert(0, str(store.APP_ROOT / "tools"))
+        sys.path.append(str(store.APP_ROOT / "tools"))   # after backend: tools/ holds same-named CLI wrappers (music_library)
     import pixabay  # type: ignore
     return pixabay
 
@@ -1547,7 +1547,10 @@ def razgon_kit_at_start() -> None:
     """The Razgon 2D studio in the YOUTUBE folder follows the kit this Studio ships (tools/razgon_sync.py): an update of
     the Studio from GitHub reaches the animation tools too, while hand-changed files, projects and the prop library stay."""
     try:
-        sys.path.insert(0, str(APP_ROOT / "tools"))
+        if str(APP_ROOT / "tools") not in sys.path:
+            # appended, never first: tools/music_library.py, a CLI wrapper, would shadow backend/music_library.py and the
+            # film's music fails with «no attribute selected» (27 November 2026)
+            sys.path.append(str(APP_ROOT / "tools"))
         import razgon_sync
         razgon_sync.at_start()
     except Exception as error:   # never let it stop the Studio
