@@ -113,19 +113,23 @@ def repair_script(audio: Path | speech.Voice, script: str, words: list[dict], la
             continue
         # A completely swallowed opening/ending can have no boundary.
         # Use the nearest heard phrases and the measured audio duration.
-        left = row['start']
-        right = row['end']
-        if left is None:
-            left = next((p['end'] for p in reversed(report['phrases'][:number - 1]) if p['end'] is not None), 0)
-        if right is None:
-            right = next((p['start'] for p in report['phrases'][number:] if p['start'] is not None), duration)
-        lo, hi = max(0, left - 1), min(duration, right + 1)
+        # The hole may lie before the phrase's first heard word: Whisper heard «Das 100 Kilometer» of a fifteen-word
+        # sentence and nothing in the 3.5 s of voice before «Das» (Karl, 27 November 2026). So the piece heard again runs
+        # from the end of the phrase before to the start of the phrase after, holes on both sides included.
+        left = next((p['end'] for p in reversed(report['phrases'][:number - 1]) if p['end'] is not None), None)
+        right = next((p['start'] for p in report['phrases'][number:] if p['start'] is not None), None)
+        left = left if left is not None else (row['start'] if row['start'] is not None else 0)
+        right = right if right is not None else (row['end'] if row['end'] is not None else duration)
+        lo, hi = max(0, left), min(duration, right)
         span = [i for i, word in enumerate(words) if word['end'] > lo and word['start'] < hi]
-        if not span:
-            continue
-        a, b = span[0], span[-1]
-        start = lo if a == 0 else words[a]['start']
-        end = hi if b == len(words) - 1 else words[b]['end']
+        if span:
+            a, b = span[0], span[-1]
+            # never cut a word in two: a neighbour's word reaching into the window is heard again whole
+            start = min(lo, words[a]['start'])
+            end = max(hi, words[b]['end'])
+        else:   # nothing heard there at all (a swallowed ending): the new words go in between
+            a = next((i for i, word in enumerate(words) if word['start'] >= hi), len(words))
+            b, start, end = a - 1, lo, hi
         if end <= start or end - start > MAX_SCRIPT_SECONDS:
             continue
         piece = cut(audio, start, end)

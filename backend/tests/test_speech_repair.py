@@ -79,6 +79,17 @@ class ScriptPhraseRepairTest(unittest.TestCase):
         self.assertEqual(result, self.full)
         self.assertEqual(speech_repair.speech.compare_script(self.script, result, 24)['status'], 'matched')
 
+    def test_a_hole_before_the_phrases_first_heard_word_is_heard_again(self):
+        # Karl, 27 November 2026: Whisper heard only «Das 100 Kilometer über der Erde» of a fifteen-word sentence; the
+        # voice before its first heard word was cut out of the second look, so the repair never found it
+        second = [word for word in self.full if 10 <= word['start'] < 18]
+        late_first = {**second[0], 'start': 12.0, 'end': 12.3}   # its first word heard late, beside the tail
+        broken = [word for word in self.full if word['start'] < 10] + [late_first] + second[-2:] + [word for word in self.full if word['start'] >= 18]
+        result, fixed, bounds, calls = self.rehear(broken)
+        self.assertEqual((fixed, calls), (1, 1))
+        self.assertLessEqual(bounds[0], second[0]['start'])
+        self.assertEqual(result, self.full)
+
     def test_completely_missing_ending_uses_measured_audio_duration(self):
         result, fixed, bounds, calls = self.rehear([word for word in self.full if word['start'] < 18])
         self.assertEqual((fixed, calls), (1, 1))
