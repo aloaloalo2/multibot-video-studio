@@ -676,7 +676,8 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
                     if clone and not base:
                         result = draw_clone_from_text(written, name, work, hero, logo_ref)
                     else:
-                        command = [str(CODEX), "exec", "-s", "workspace-write", "--skip-git-repo-check", "-C", str(work)]
+                        # --ephemeral: no session rollout with the picture inside in ~/.codex/sessions (27 November 2026)
+                        command = [str(CODEX), "exec", "--ephemeral", "-s", "workspace-write", "--skip-git-repo-check", "-C", str(work)]
                         for ref in refs: command += ["-i", str(ref)]
                         result = subprocess.run(command + ["-"], input=written if base or writer == "trending" else drawing(written, name), cwd=work, text=True,
                                                 capture_output=True, timeout=TIMEOUT)
