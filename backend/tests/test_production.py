@@ -354,8 +354,11 @@ class ProductionTest(unittest.TestCase):
                 patch.object(store, "read_json", return_value={}):
             text = production.photo_brief(self.project, REQUEST)
         self.assertIn(production.motion_direction.SMOOTH_CODE, text)
-        self.assertIn("прикріплений до фону", production.motion_direction.SMOOTH_CODE)
+        self.assertIn("всередині того самого layer", production.motion_direction.SMOOTH_CODE)
         self.assertIn("пунктирних кіл не став", production.motion_direction.SMOOTH_CODE)
+        self.assertIn("jump-check", production.motion_direction.SMOOTH_CODE)
+        import montage_context
+        self.assertIn("--jump-check", Path(montage_context.__file__).read_text())
 
     def test_accents_follow_the_channel_setting(self):
         with patch.object(store, "get_channel_folder", return_value=Path(self.tmp.name)), \
