@@ -68,3 +68,17 @@ class PublishedCheckTest(unittest.TestCase):
         notices = Notices()
         notices.update(['c'], [{'channel_id': 'c', 'project_id': 'p', 'kind': 'експорт'}], lambda task: 'done')
         self.assertNotIn('publish', notices.update([], [], lambda task: 'done')['c'])
+
+
+class EventSoundsOutcomeTest(unittest.TestCase):
+    """27 November 2026: «кадри готові, а галочки біля каналу не було, а лише пауза»."""
+
+    def test_sounds_of_a_regular_film_count_as_done(self):
+        from unittest.mock import patch
+        import app
+        with patch.object(app.razgon_sound, 'state', return_value=None):
+            self.assertEqual(app.channel_task_outcome({'kind': 'музика й ефекти', 'channel_id': 'c', 'project_id': 'p'}), 'done')
+        with patch.object(app.razgon_sound, 'state', return_value={'status': 'failed'}), \
+                patch.object(app, 'project_jobs', return_value={'музика й ефекти': 'failed'}), \
+                patch.object(app.episode_pause, 'paused', return_value=None):
+            self.assertEqual(app.channel_task_outcome({'kind': 'музика й ефекти', 'channel_id': 'c', 'project_id': 'p'}), 'failed')

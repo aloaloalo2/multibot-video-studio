@@ -945,6 +945,13 @@ def event_sounds_running() -> set:
         return set(event_sounds.RUNNING)
 
 
+def status_of(read):
+    try:
+        return (read() or {}).get('status')
+    except (store.StudioError, OSError, ValueError, KeyError):
+        return None
+
+
 def channel_task_outcome(task):
     kind, cid, pid = task['kind'], task['channel_id'], task.get('project_id')
     if kind == 'експорт':
@@ -959,6 +966,11 @@ def channel_task_outcome(task):
         import episode_ideas
         data = episode_ideas.read_project(pid) if pid else episode_ideas.read(cid)
         return 'cancelled' if data.get('cancelled') else data.get('status')
+    if kind == 'музика й ефекти' and not status_of(lambda: razgon_sound.state(pid)):
+        # a regular film's sounds laid from its frames' code (event_sounds.py) keep no receipt; only Razgon's own sound
+        # run writes one. Its end is no failure: a missing receipt showed the channel's pause sign although the frames
+        # were made (user, 27 November 2026: «кадри готові, а галочки біля каналу не було, а лише пауза»)
+        return 'done'
     if kind == 'створення кадрів':
         request = listed(pid).get('production_request') or {}
         if request.get('paused') and (request.get('paused_by') == 'user' or
