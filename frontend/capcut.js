@@ -232,7 +232,7 @@ function channelTransitionValues(){
 // A CapCut transition's marker on the timeline is white until its picture is drawn, then blue (user, 25 November 2026:
 // «переходи, які сині… зроби їх білі, якщо вони не показуються ще такими, як вони мають бути»). The server says which
 // are drawn (its background pass draws them all); a dissolve, a slide or a cinematic one is drawn live and is blue at once.
-let capcutDrawn=new Set(),capcutReadyTimer=0,capcutReadyFor=null;
+let capcutDrawn=new Set(),capcutReadyTimer=0,capcutReadyFor=null,capcutReadyBusy=null;
 function capcutPending(join){return !!join&&isCapcutTransition(join.type)&&!capcutDrawn.has(join.id);}
 function markCapcutPending(){
   const joins=state.project?.join_transitions||[];
@@ -242,7 +242,8 @@ function markCapcutPending(){
   }
 }
 async function refreshCapcutReady(){
-  const id=state.project?.id;clearTimeout(capcutReadyTimer);if(!id)return;
+  const id=state.project?.id;if(!id||capcutReadyBusy===id)return;   // one request at a time: it schedules the next
+  clearTimeout(capcutReadyTimer);capcutReadyTimer=0;capcutReadyBusy=id;
   try{
     const data=await api(`/api/projects/${encodeURIComponent(id)}/capcut-ready`);
     if(state.project?.id!==id)return;
@@ -258,6 +259,9 @@ async function refreshCapcutReady(){
       capcutPreviews.set(key,{state:'ready',url});filled=true;
     }
     if(filled&&!state.playing)renderPreview();
-  }catch{}
-  if(state.project?.id===id&&(state.project.join_transitions||[]).some(capcutPending))capcutReadyTimer=setTimeout(refreshCapcutReady,4000);
+  }catch{}finally{capcutReadyBusy=null;}
+  // no timer left means none runs: the next redraw with new seams (the frame agent adds them while the editor is open)
+  // starts the polling again; a stale id kept it «running» and new transitions never played until a reload (user,
+  // 27 November 2026: «чому синє… але нема переходу»)
+  capcutReadyTimer=state.project?.id===id&&(state.project.join_transitions||[]).some(capcutPending)?setTimeout(refreshCapcutReady,4000):0;
 }
