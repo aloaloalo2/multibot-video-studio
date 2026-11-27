@@ -3625,3 +3625,6 @@ button.secondary,.modal-actions>button:not(.primary):not(.danger){border-color:#
 :is(#export-open,.glow-action,#project-next-action):not(:disabled):hover,button.primary:not(:disabled):hover{box-shadow:0 0 26px rgba(255,255,255,.42),0 0 6px rgba(255,255,255,.55)}
 button.primary{transition:background-color .15s,box-shadow .2s}
 .project-export-go:hover,.project-export-go:focus-visible{box-shadow:0 0 16px rgba(255,255,255,.45)}
+/* the channel's check after a publication: the publication's blue with a soft glow (27 November 2026: «має бути синя…
+   Glow») */
+.channel-busy.is-complete.is-published svg{filter:drop-shadow(0 0 3px rgba(127,179,255,.85)) drop-shadow(0 0 7px rgba(127,179,255,.45))}

@@ -53,3 +53,18 @@ class ChannelActivityTest(unittest.TestCase):
         def broken(task):
             raise OSError('unavailable')
         self.assertEqual(notices.update([], [], broken)['channel']['status'], 'stopped')
+
+
+class PublishedCheckTest(unittest.TestCase):
+    """After a publication the channel's check is the publication's blue, even with other work beside it (27 November 2026:
+    «після публікації галочка сіра… має бути синя»)."""
+    def test_a_publication_beside_an_export_still_marks_the_channel_published(self):
+        notices = Notices()
+        tasks = [{'channel_id': 'c', 'project_id': 'p', 'kind': 'публікація'}, {'channel_id': 'c', 'project_id': 'p', 'kind': 'експорт'}]
+        notices.update(['c'], tasks, lambda task: 'done')
+        self.assertTrue(notices.update([], [], lambda task: 'done')['c'].get('publish'))
+
+    def test_work_without_a_publication_stays_grey(self):
+        notices = Notices()
+        notices.update(['c'], [{'channel_id': 'c', 'project_id': 'p', 'kind': 'експорт'}], lambda task: 'done')
+        self.assertNotIn('publish', notices.update([], [], lambda task: 'done')['c'])

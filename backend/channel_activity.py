@@ -21,8 +21,8 @@ class Notices:
             for cid in list(self.running):
                 if cid in active:
                     continue
-                results = []
-                for task in self.running[cid].values():
+                results, tasks_done = [], list(self.running[cid].values())
+                for task in tasks_done:
                     try:
                         results.append(outcome(task))
                     except Exception:
@@ -37,10 +37,12 @@ class Notices:
                     status = 'paused'
                 else:
                     status = 'stopped'
-                # a channel whose finished work was only YouTube publications shows its check in the publication's blue
-                # (user, 19 November 2026: «галочка такого кольору теж… біля каналу»)
-                only_publishing = all(task.get('kind') == 'публікація' for task in self.running[cid].values())
-                self.finished[cid] = {'id': str(time.time_ns()), 'status': status, **({'publish': True} if only_publishing else {})}
+                # a channel whose finished work includes a YouTube publication that went through shows its check in the
+                # publication's blue (user, 19 November 2026: «галочка такого кольору теж… біля каналу»); other work beside
+                # it (an export, languages) left it grey (27 November 2026: «після публікації галочка сіра… має бути синя»)
+                published = status == 'done' and any(task.get('kind') == 'публікація' and value in done
+                                                       for task, value in zip(tasks_done, results))
+                self.finished[cid] = {'id': str(time.time_ns()), 'status': status, **({'publish': True} if published else {})}
                 del self.running[cid]
             return {cid: dict(value) for cid, value in self.finished.items()}
 
