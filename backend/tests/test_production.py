@@ -354,7 +354,7 @@ class ProductionTest(unittest.TestCase):
                 patch.object(store, "read_json", return_value={}):
             text = production.photo_brief(self.project, REQUEST)
         self.assertIn(production.motion_direction.SMOOTH_CODE, text)
-        self.assertIn("всередині того самого layer", production.motion_direction.SMOOTH_CODE)
+        self.assertIn("шару того, що він називає", production.motion_direction.SMOOTH_CODE)
         self.assertIn("пунктирних кіл не став", production.motion_direction.SMOOTH_CODE)
         self.assertIn("jump-check", production.motion_direction.SMOOTH_CODE)
         import montage_context
