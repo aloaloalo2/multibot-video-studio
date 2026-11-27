@@ -1,0 +1,328 @@
+{
+ "props": [
+  {
+   "name": "andromeda",
+   "sha256": "9ec534f58c53285c8c222a0d960953c879e34dda30946662aed94a2298e8413b",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "archive_box",
+   "sha256": "2bb7a062c5634b336d44c0385ac0038acb716024e632700a690392aeebb7213a",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "astronomer",
+   "sha256": "3038669744db0c97cc76466a9f347d96313a0dceb5de923b15ff44cd7e9d3aa5",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "betelgeuse",
+   "sha256": "3b66080957a03efb55296a349a3bd6de1421fc01a5518e766f631b6e16944579",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "betelgeuse-2",
+   "sha256": "2a7e410fb288dc3a289d4c5e5505fc32890057cbf1a9d03f34fb1915519e00a3",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "bluestar",
+   "sha256": "1c2ba49657a2893954d3cc5fbedae7edbd56c395c2660e3f56782b76ec717c15",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "bowling",
+   "sha256": "2956ea0eb81d15e6adc0d7146ec2240febcb77cc3b57ce51d102ef8f9c0d5c87",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "calendar",
+   "sha256": "fb60ff9b9958e96ef00e342a08d5bcae12b2aed3adafef26985562434710b6f8",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "cepheid",
+   "sha256": "1f02ec762dcd90c9364513e78ddf53fc81b722c1d3e479e7b29dae023ce2c8eb",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "dwarf",
+   "sha256": "4f7c821e06d2ffa386af9585756ce93a0a4462506023f10be4371cfd50ed8491",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "earth",
+   "sha256": "2ec75225fdf006b5694fd9f482125e2aa37f7e397d3e0fa99d0a1e6418b0a122",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "earth-2",
+   "sha256": "c1cc1fade28f92c276ac21a0a5efb8d5605a8c04f5ca9e3b0bdba8f51c371257",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "earth-3",
+   "sha256": "0eac85e25701d8c4e88781f71b698efcc4feb3a5699afb335c1eb47216282a7e",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "edgegal",
+   "sha256": "36d252d5c9063116addad136f31b8b06ddc17e790ada294cad5a46cc49c5e1be",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "elliptical",
+   "sha256": "9aa42c7e4d323a4d0e6ce2f5019af6740bb86eb475f7d61451ff61be08c69fcd",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "flag",
+   "sha256": "bb62acf87e47403a92e487a4c7ac07f2e06ac77eef1ac3ea64dd3b945a8b105e",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "hubble",
+   "sha256": "42f5f6d14206e619db30abd796664fc92f3691876866732edc0e9e8971766873",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "jupiter",
+   "sha256": "f2ec7a30b4d4a50abd4fd36b507379e6a746c83475f87c6554274808afa01cd1",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "mars",
+   "sha256": "d018f637541faad115046e483aef9559caf76fc27e0fba36d783ccadc8983214",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "mercury",
+   "sha256": "a436ba07fa0c64fadb582ec471849e3ad2082a5ba0c18be5d5aadd82fd51d608",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "milkyway_edge",
+   "sha256": "2f96a84e2e0dc1b252ae9d555099c1d14b50113d7724cbd137d0a3c08e494066",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "milkyway_face",
+   "sha256": "62dd88d9cecc4b2175bc2ff0515e53135d07e99a178f7009f2646ee8255512cf",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "pepper",
+   "sha256": "6d05b8e2ded76463b75e865b8047d5967e767b5811058489762fe90b490a1d23",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "peppercorn",
+   "sha256": "1d8831b0512149e52623df3c9f288030385468b58479d31d3fdf312bbe0a0538",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "proxima",
+   "sha256": "dbdc0474da2f15c0b184e50babfb13a8bee946e7473daa1ed73f22e0ee2cf834",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "quasar",
+   "sha256": "9feb7de2bc733e00c7cf3321dc65833d8cb417339a3b9d4456d841c0d97a2e97",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "ship",
+   "sha256": "fb97d37c1f01685ab72bb7862b08735bdea182803222a0c2080748e4ec49ddd1",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "spiral",
+   "sha256": "ad51834b01d1dfc42fca2e50d10ff8995a1ce085164d423f8d56ef22cae97400",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "sun",
+   "sha256": "d690d7c033664f1148568cf65001834bdca8ad7ed35c306d6514e23a7db32d27",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "sun-2",
+   "sha256": "fdc5e8dc157200f24c28950b13b2a90c5b67dde6ec16e02fcb40bb97e34183a0",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "telescope",
+   "sha256": "30a934037e23962cd5d0fbc4fe2ef93572df80395a6211718dd385833bd1f964",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "tennis",
+   "sha256": "bf6e592c3a0be23c8126e4f4af23bf6f718559d9bdf47d6bea838c082f22a7dc",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "venus",
+   "sha256": "e2e08ff8d5bb05b3d4f8ccaac40757548c9393512f1a99d92141116c6c9deae2",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "warship",
+   "sha256": "37f6f73043a623f2cf377797d2d91e9a8d4920177c3fb4a3297f1760d68b8c29",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "watch",
+   "sha256": "be97870a17f2084c4c520944dd5df3ba494c04d26e23f46bef1aef6cb7c5d457",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  },
+  {
+   "name": "writer",
+   "sha256": "9c9f6c4bcb60c6a6ca8e7baef81bb55674de9e6c0f5d1c427271bb10e76c6f30",
+   "description": "",
+   "projects": [
+    "astrofizika-ua-naskilki-velichezniy-vsesvit-vid-zemli-do-naybilshogo-shcho-isnuye"
+   ],
+   "added": "2026-11-26"
+  }
+ ]
+}

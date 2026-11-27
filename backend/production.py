@@ -157,6 +157,7 @@ def brief(project: dict, request: dict, notes: str = "") -> str:
    знову робить блоком. Не рендери відео кадрів: не запускай razgon_bridge.py push, final чи export, а render.mjs запускай
    тільки з --sheet, для стоп-кадрів і безкоштовних перевірок. Рендер і склейку робить студія, коли автор натисне «Експорт MP4».
 {motion_direction.EXECUTION}
+{motion_direction.SMOOTH_CODE}
 {motion_direction.ACCENTS}
 {motion_direction.ANIMATION_TEXT}
 {QUALITY.replace("5. ", "4. ", 1)}
@@ -317,6 +318,7 @@ def photo_brief(project: dict, request: dict, notes: str = "") -> str:
 {remarks}Твоє завдання: кадри {scope}, кожен за своїм форматом у плані і за змістом своїх слів.
 {PHOTO_STYLE_WISH}
 {motion_direction.EXECUTION}
+{motion_direction.SMOOTH_CODE}
 Пріоритет автора для створених зображень Codex: {director.channel_settings(project).get('generated_image_style') or 'Стиль за змістом кадру'}.
 Кадри, які вже стоять на таймлайні, не переробляй, якщо автор не просить правок саме до них.
 1. Спочатку перевір перелік готових PNG та шляхів у карті. Якщо автор додав картинки чи відео в папку випуску,
@@ -527,6 +529,7 @@ def film_repair_brief(project: dict, request: dict, notes: str) -> str:
 Побажання автора:
 {notes}
 {accents}
+{motion_direction.SMOOTH_CODE}
 Спершу визнач, чого саме стосується побажання: яких кадрів, переходів, тексту, звуку чи монтажу. Для цього прочитай
 python3 tools/studio.py summary {project['id']} --issues і, за потреби, plan чи still. Змінюй лише те, про що просить автор.
 Інші кадри, їхні таймінги, озвучку, музику, логотип і монтаж збережи. Не перебудовуй весь ролик і не створюй кадри заново.
@@ -546,6 +549,7 @@ def repair_brief(project: dict, request: dict, notes: str) -> str:
 Побажання автора:
 {notes}
 {accents}
+{motion_direction.SMOOTH_CODE}
 Прочитай коротку карту production-context.txt: вона містить вибрані кадри, їхні сцени та сусідів для контексту.
 Зміни лише вибрані кадри; інші кадри, їхні таймінги, озвучку, музику, логотип і монтаж збережи. Спільний файл редагуй обережно:
 збережи поведінку невибраних кадрів. Не перебудовуй весь ролик і не запускай початкову генерацію кадрів. Використовуй наявні сцени та предмети.
