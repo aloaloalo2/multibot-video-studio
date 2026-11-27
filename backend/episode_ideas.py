@@ -770,8 +770,8 @@ def opus(prompt, root, identity, cid, *, session=None, resume=False, session_cwd
 TOPIC_PROMPT = r"""
 Propose exactly 5 fresh, compelling YouTube video topics for this channel's audience.
 The channel's niche comes first from the author's current description of the channel: channel_agent_rules and script_wishes,
-then the newest samples. A channel can change its subject: previous_titles of an older, different subject are only
-exclusions and never define the niche. Every one of the five ideas must sit squarely inside that niche. A neighbouring
+then the newest samples. A channel can change its subject: the titles in topic_exclusions (previous_titles) of an older,
+different subject are only exclusions and never define the niche. Every one of the five ideas must sit squarely inside that niche. A neighbouring
 field is off-topic: for a space and astronomy channel every idea is about space (planets, the Moon, the Sun, stars,
 galaxies, black holes, spaceflight, the Universe), and everyday physics such as a kettle, ice or the colour of the sky
 is not. Freshness means a new subject within the niche, never a step out of it (author, 17 November 2026: ideas came
@@ -801,7 +801,10 @@ facts, fake urgency, unsupported medical claims, cure guarantees or guaranteed o
 The future script must be able to deliver the title's promise. Channel history contains examples,
 not performance analytics; do not invent CTR, search trends or claims that a formula guarantees views.
 Refresh means a radically different central SUBJECT, not another title or angle on the same topic.
-Treat previous_titles, previous_suggestions and previous_topic_history as exclusions, even if unused.
+topic_exclusions lists every title already published or already offered to the author, with its subject and premise
+(in a full context the same lists are previous_titles, previous_suggestions and previous_topic_history). They are
+exclusions, never examples: never return one of those titles, verbatim or with other CAPS, punctuation or a word swapped,
+and never their subjects (27 November 2026: four of five ideas came back word for word from the offered list).
 Changing punctuation, CAPS, numbers, age, season, wording, or an emotional hook does not create a new topic.
 Move to different concrete subjects, viewer problems, situations or phenomena within the channel niche.
 For example, a previous topic about choosing winter tyres excludes tyre age, markings, buying mistakes
@@ -829,7 +832,7 @@ using the same subject wording as history whenever the underlying topic is the s
 candidate that could mostly reuse a previous episode's core explanation or practical advice.
 Before finalizing, compare the core subject of every candidate with ALL excluded topics and replace
 nearby topics internally in this same request. No extra critic call or paid retry.
-Exclude earlier topics, previous_suggestions and close paraphrases. Keep meaningful numbers, but use numbers only where useful.
+Exclude every topic_exclusions entry and close paraphrases. Keep meaningful numbers, but use numbers only where useful.
 Use plain titles without list numbering or list markers, no colon, dash or hyphen of any kind,
 and a maximum of 100 characters per title. Preserve the channel language and tone.
 Keep existing digits as digits; do not spell out numbers in titles.

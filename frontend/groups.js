@@ -221,7 +221,9 @@ function renderGroupedTimelineWithIndex(){
   const scenes=sceneGroups().filter(g=>g.role!=='overlay').sort((a,b)=>groupBounds(a).start-groupBounds(b).start);
   const index=new Map();layers().forEach((layer,i)=>{for(const c of layer.clips || [])index.set(c.id,i);});
   let rows=[];
-  if(scenes.length||plannedTimelineFrames().length)rows.push({title:'Кадри · '+Math.max(scenes.length,plannedTimelineFrames().length),groups:scenes,ref:'scenes',z:scenes.length?Math.max(...scenes.flatMap(g=>g.clip_ids.map(id=>index.get(id) ?? -1))):-1});
+  // the frames row comes with the first frame made: planned frames alone are not on the timeline yet (user, 27 November
+  // 2026: «тут ще кадрів нема тому це лишнє»); once some are made the guides mark the ones still missing
+  if(scenes.length)rows.push({title:'Кадри · '+Math.max(scenes.length,plannedTimelineFrames().length),groups:scenes,ref:'scenes',z:scenes.length?Math.max(...scenes.flatMap(g=>g.clip_ids.map(id=>index.get(id) ?? -1))):-1});
   for(const group of sceneGroups().filter(g=>g.role==='overlay'))rows.push({title:groupDisplayTitle(group),groups:[group],ref:'group:'+group.id,z:Math.max(...group.clip_ids.map(id=>index.get(id) ?? -1))});
   const grouped=new Set(sceneGroups().flatMap(g=>g.clip_ids));
   for(const layer of layers())for(const clip of layer.clips || [])if(!grouped.has(clip.id))rows.push({title:clipLabel(clip),clip,layer,ref:'layer:'+layer.id,z:index.get(clip.id)});
