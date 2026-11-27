@@ -258,7 +258,7 @@ def _note(project_file, path: Path) -> None:
 
 
 def _used(path: Path) -> None:
-    """A reused cache entry is fresh again: storage_tidy drops entries untouched for three days."""
+    """A reused cache entry is fresh again: storage_tidy drops entries untouched for 10 hours."""
     try:
         os.utime(path, None)
     except OSError:

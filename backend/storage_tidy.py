@@ -34,7 +34,8 @@ LOG_KEEP = 1024 * 1024
 QUIET = 3600                    # a file written during the last hour may belong to work in progress
 LEVELED_AGE = QUIET             # an unused leveled copy (up to 700 MB a film) goes after the quiet hour; it is rebuilt
                                 # from its voice in a minute if needed (was a week: 3.5 GB lay unused; 17 November 2026)
-CAPCUT_AGE = 3 * 86400          # a CapCut transition render not used for three days is rebuilt when needed
+CAPCUT_AGE = 10 * 3600         # a CapCut transition render not used for 10 hours is rebuilt when needed (user, 27 November
+                                # 2026: «10 год вистачить, щоб очистити переходи»; three days before)
 CAPCUT_LIMIT = 2 * 1024 ** 3    # the shared CapCut cache keeps at most this much, the least recently used going first
 CACHE_AGE = 7 * 86400           # an episode's rebuilt cache nothing wrote for a week goes whole
 # What the studio makes again by itself when it needs it (space.CACHE, «Звільнити місце»): export chunks, the engine's
