@@ -3628,3 +3628,8 @@ button.primary{transition:background-color .15s,box-shadow .2s}
 /* the channel's check after a publication: the publication's blue with a soft glow (27 November 2026: «має бути синя…
    Glow») */
 .channel-busy.is-complete.is-published svg{filter:drop-shadow(0 0 3px rgba(127,179,255,.85)) drop-shadow(0 0 7px rgba(127,179,255,.45))}
+/* a button that cannot be pressed looks it: no frame, dim letters, not just half transparent (user, 27 November 2026,
+   «Новий випуск»: «кнопка створити, як будто я її можу нажати… щоб я не путався») */
+button:is(.primary,.secondary,.outline):disabled,button.ui-action:is(.primary,.secondary,.outline):disabled,.modal-actions>button:disabled{opacity:1;background:#141417;border-color:#1c1d21;color:#4d4f56;box-shadow:none;cursor:not-allowed}
+button:is(.primary,.secondary,.outline):disabled svg,.modal-actions>button:disabled svg{opacity:.55}
+button:is(.primary,.secondary,.outline):disabled:hover,button.ui-action:is(.primary,.secondary,.outline):disabled:hover{background:#141417;border-color:#1c1d21;color:#4d4f56;box-shadow:none}
