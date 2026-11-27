@@ -13,7 +13,11 @@ import audience_policy
 PROMPT = '''Also write publication metadata in the channel language, using the finished script.
 Return metadata with exactly 3 distinct A/B titles (titles array), including the selected title verbatim.
 Alternative titles must contain no colon, dash, hyphen or list numbering. Do not invent claims.
-description: written the way the person who made this video would write a few words under it, not a template
+description: always written by the channel's author himself, in the first person, speaking straight to the viewer, as if
+he typed it under his own video (the author, 27 November 2026: «опис має бути завжди від автора написаний каналу, від нього
+звернення, типу він писав цей опис, і дуже прямим текстом без води»): «я», «мы» for the channel, «вы» to the viewer; very
+direct plain text, every sentence carries something concrete from this video, no warm-up, no filler, no general words; no
+made-up personal stories or experiences, the first person speaks only about this video and its subject; not a template
 (the author, 17 November 2026: «два-три речення, знизу хештеги… як звичайна людина написала»). 2-3 plain sentences in the
 channel language about what this video shows and why it is worth watching, in everyday words. The description must be
 concrete, never only pleasant (the author, 18 November 2026: «описання має бути конкретне… обов'язково»): name what this
@@ -74,7 +78,7 @@ def shape(seed) -> str:
     words = {0: 'No emoji at all.', 1: 'Exactly one emoji that fits the subject, placed where a person would put it.',
              2: 'Two emoji that fit the subject, placed naturally (not both at the end, not as bullet points).'}[emoji]
     return (f'\nTHIS DESCRIPTION\'S OWN SHAPE (picked at random so no two descriptions look alike; follow it): '
-            f'{sentences} sentences. {rng.choice(OPENINGS)} {words} Exactly {hashtags} hashtag'
+            f'{sentences} sentences, in the channel author\'s own first-person voice to the viewer. {rng.choice(OPENINGS)} {words} Exactly {hashtags} hashtag'
             f'{"" if hashtags == 1 else "s"} on the hashtag line.')
 
 

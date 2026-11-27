@@ -293,6 +293,8 @@ class DescriptionRuleTest(unittest.TestCase):
         self.assertIn('No emoji at all.', text)
         self.assertIn('Exactly one emoji', text)
         self.assertIn(metadata.shape('p7'), metadata.prompt(None, 'p7'))
+        self.assertIn('always written by the channel\'s author himself, in the first person', metadata.PROMPT)
+        self.assertIn('no filler', metadata.PROMPT)
         description = 'Почему Луна стала для нас такой далёкой? 🌕 Разбираем, во что обходится полёт.\n\n#космос #Луна'
         self.assertEqual(metadata.validate(self.value(description), self.TITLE)['description'], description)
 
