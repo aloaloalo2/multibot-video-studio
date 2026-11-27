@@ -2832,6 +2832,9 @@ def keep_sounds() -> None:
 
 # in this order: the projects are migrated before anything else reads or changes them; a run cut by the restart is
 # settled and hidden projects come back before the slower housekeeping
+import music_sync  # noqa: E402
+
+
 STARTUP_TASKS = (
     migrate_at_start,
     production.reset_interrupted,
@@ -2840,6 +2843,7 @@ STARTUP_TASKS = (
     start_automation,
     director.resume_retimes,
     razgon_kit_at_start,
+    music_sync.start,                # the channels' music library from its repository on every Mac (27 November 2026)
     topics.update_all,
     keep_sounds,
     spend_report.backfill_all,       # a run that ended while an older version ran still gets its spend report
