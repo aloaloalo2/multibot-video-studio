@@ -3633,3 +3633,14 @@ button.primary{transition:background-color .15s,box-shadow .2s}
 button:is(.primary,.secondary,.outline):disabled,button.ui-action:is(.primary,.secondary,.outline):disabled,.modal-actions>button:disabled{opacity:1;background:#141417;border-color:#1c1d21;color:#4d4f56;box-shadow:none;cursor:not-allowed}
 button:is(.primary,.secondary,.outline):disabled svg,.modal-actions>button:disabled svg{opacity:.55}
 button:is(.primary,.secondary,.outline):disabled:hover,button.ui-action:is(.primary,.secondary,.outline):disabled:hover{background:#141417;border-color:#1c1d21;color:#4d4f56;box-shadow:none}
+/* close crosses: two thin strokes, no round button around them; a faint circle only on hover (user, 27 November 2026:
+   «хрестики… делікатніші. Тонші… кнопкою такою круглою не треба… При наведенні вже виділяється») */
+:is(#modal-close,.lang-script-close,.thumb-edit-close){position:relative;width:30px;height:30px;min-width:30px;padding:0;border:0;border-radius:50%;
+  background:transparent;color:#8a8c95;font-size:0;line-height:0;box-shadow:none;transition:background-color .15s,color .15s}
+:is(#modal-close,.lang-script-close,.thumb-edit-close)::before,:is(#modal-close,.lang-script-close,.thumb-edit-close)::after{content:'';position:absolute;
+  left:50%;top:50%;width:15px;height:1.3px;border-radius:1px;background:currentColor;transform:translate(-50%,-50%) rotate(45deg)}
+:is(#modal-close,.lang-script-close,.thumb-edit-close)::after{transform:translate(-50%,-50%) rotate(-45deg)}
+:is(#modal-close,.lang-script-close,.thumb-edit-close):hover{background:#ffffff10;color:#f1f1f3;border:0}
+.heygen-avatar-large-close{background:transparent;color:#b9bbc3}
+.heygen-avatar-large-close:hover{background:#ffffff14;color:#fff}
+.heygen-avatar-large-close svg{width:14px;height:14px;stroke-width:1.4}
