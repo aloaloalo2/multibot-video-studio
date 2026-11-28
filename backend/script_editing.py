@@ -64,6 +64,8 @@ CRITERIA = [
     'Tautology: the same word or a word of the same root twice in one sentence or in neighbouring sentences, one thought said twice in other words, pleonasms where the second word is already in the first («свободная вакансия», «вернулся обратно»); fix by rebuilding the sentence or a pronoun, never by cycling synonyms, and keep one name for one thing',
     # the author, 26 November 2026: «давати інформацію не банальну… аутентичності треба додавати»
     'Paragraphs made only of what everyone already knows about the topic (common_knowledge), an opening or ending resting on it, no behind-the-scenes detail of who found it, how it was observed or measured, what was believed before or what is still disputed',
+    # the author, 28 November 2026: «ця шаблонність… в кінці така сама»
+    'A template ending: a menu of choices for the comments («X, Y или Z»), or the same build and words as previous_endings; the script must end on the host\'s own last thought about this topic',
     'No position of the host: fewer than two views of his own a reasonable person could dispute, each argued from the facts just given, or no honest place where he says he is not sure and why; views contradicting host_views_before without saying why',
     'Sentences a viewer without preparation could not retell in his own words after hearing them once: unnatural word order, three or more chained clauses, a conclusion without what it means for him',
 ]
@@ -245,6 +247,7 @@ def self_review(pid, text, ctx, target_words, session, ask, receipt_file):
         requirements={'title':ctx.get('selected_title'),'approved_opening':ctx.get('approved_opening'),
             'common_knowledge':ctx.get('common_knowledge') or [],'host_views':ctx.get('host_views') or [],
             'host_views_before':ctx.get('host_views_before') or [],
+            'previous_endings':ctx.get('previous_endings') or [],
             # the same compacted rules the writer got: without the model-routing sections (they once made Opus refuse a
             # normal script) and without repeated paragraphs, about 14 000 characters less on each pass (17 November 2026)
             'channel_context':writer_context.compact({k:ctx.get(k) for k in ('channel','audience','language','narrator',

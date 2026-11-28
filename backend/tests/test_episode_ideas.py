@@ -478,3 +478,22 @@ class AuthenticityTest(unittest.TestCase):
             self.assertEqual(len(views), ideas.VIEWS_KEPT)
             self.assertEqual(views[-1], f'Думка {ideas.VIEWS_KEPT - 1}')
             self.assertEqual(ideas.host_views('c2'), [])
+
+
+class OwnVoiceAndEndingTest(unittest.TestCase):
+    """28 November 2026, after a channel lost monetization for repetitive content: the host thinks aloud, and every
+    script ends its own way, seeing the last sentences of the channel's earlier scripts."""
+
+    def test_the_brief_asks_for_the_hosts_voice_and_an_own_ending(self):
+        brief = ideas.writer_brief({'channel': 'C'})
+        for part in ('думає вголос', 'не вигадує особистого досвіду', 'меню варіантів', 'previous_endings'):
+            self.assertIn(part, brief)
+        import script_editing
+        self.assertTrue(any('template ending' in check.lower() for check in script_editing.CRITERIA))
+
+    def test_previous_endings_are_the_last_two_sentences_of_the_newest_scripts(self):
+        texts = {'a': 'Один. Два. Три. Напишите в комментариях, что ближе. Подпишитесь!', 'b': 'Коротко.',
+                 'c': 'Раз. Два. Три. Четыре. Берегите почки.'}
+        with patch.object(store, 'load_project', side_effect=lambda pid: {'voice_script': {'text': texts[pid]}}):
+            self.assertEqual(ideas.previous_endings([{'id': 'a'}, {'id': 'b'}, {'id': 'c'}]),
+                             ['Напишите в комментариях, что ближе. Подпишитесь!', 'Четыре. Берегите почки.'])
