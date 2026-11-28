@@ -324,3 +324,22 @@ def subprocess_state(pid):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class StoppedExportOnCardTest(unittest.TestCase):
+    """28 November 2026: «експорт зупинився на 40%, продовжити… на карточці»."""
+
+    def test_the_latest_failed_export_of_a_project_is_named(self):
+        import json, tempfile
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            def job(name, pid, status, progress, when):
+                path = root / f'{name}.json'
+                path.write_text(json.dumps({'id': name, 'project_id': pid, 'status': status, 'progress': progress, 'output_path': None, 'error': 'x'}))
+                import os; os.utime(path, (when, when))
+            job('a1', 'p1', 'complete', 100, 100); job('a2', 'p1', 'failed', 40, 200)    # p1: the newer one failed
+            job('b1', 'p2', 'failed', 40, 100); job('b2', 'p2', 'complete', 100, 200)    # p2: done since
+            job('c1', 'p3', 'cancelled', 10, 100)                                         # p3: the author's own stop
+            with patch.object(app, 'JOBS_ROOT', root), patch.dict(app._LATEST_EXPORTS, {'stamp': None, 'jobs': {}}):
+                found = app.stopped_exports()
+        self.assertEqual(found, {'p1': {'id': 'a2', 'progress': 40, 'error': 'x'}})

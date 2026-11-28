@@ -1167,6 +1167,38 @@ def channel_transfer_idle(cid):
         raise store.StudioError('Дочекайтеся завершення роботи в цьому каналі перед перенесенням налаштувань.', 409)
 
 
+_LATEST_EXPORTS = {'stamp': None, 'jobs': {}}
+
+
+def stopped_exports() -> dict:
+    """{project id: its latest export job} when that job stopped (failed or cut by a restart), read once per change of the
+    jobs folder: the card says «Експорт зупинився на 40% · Продовжити» (user, 28 November 2026: «краще на карточці…
+    писати… щоб видно було»). A cancel is the author's own and stays quiet."""
+    try:
+        stamp = JOBS_ROOT.stat().st_mtime_ns
+    except OSError:
+        return {}
+    if _LATEST_EXPORTS['stamp'] != stamp:
+        latest = {}
+        for path in JOBS_ROOT.glob('*.json'):
+            try:
+                job = store.read_json(path)
+                when = path.stat().st_mtime
+            except (OSError, ValueError, store.StudioError):
+                continue
+            if isinstance(job, dict) and job.get('project_id') and 'output_path' in job and not job.get('type'):
+                if when > latest.get(job['project_id'], (0, None))[0]:
+                    latest[job['project_id']] = (when, job)
+        _LATEST_EXPORTS.update(stamp=stamp, jobs={pid: job for pid, (_, job) in latest.items()})
+    found = {}
+    for pid, job in _LATEST_EXPORTS['jobs'].items():
+        if job.get('status') in {'queued', 'running', 'cancelling'} and job.get('id') not in ACTIVE_EXPORTS:
+            job = {**job, 'status': 'failed'}   # cut by a restart (load_job)
+        if job.get('status') in {'failed', 'error'}:
+            found[pid] = {'id': job.get('id'), 'progress': round(float(job.get('progress') or 0)), 'error': job.get('error')}
+    return found
+
+
 def recent_exports(pid: str, limit: int = 5) -> list[dict]:
     """The project's latest export jobs, newest first (running, finished, failed or cancelled)."""
     found = []
@@ -1984,7 +2016,9 @@ class Handler(BaseHTTPRequestHandler):
             completion_notices.index_exports(JOBS_ROOT)
             projects = store.list_projects((query.get("channel") or [None])[0])
             auto_settings = {}
+            stopped = stopped_exports()
             for item in projects:
+                item['export_stopped'] = None if active_export(item['id']) else stopped.get(item['id'])
                 item["freeable"] = space.freeable(item["id"])   # «Звільнити місце» only when there is something to free
                 receipts = store.read_json(completion_notices.path(item['id']), {}) or {}
                 item['last_export_at'] = (receipts.get('export') or {}).get('at', 0)

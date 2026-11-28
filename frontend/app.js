@@ -644,6 +644,13 @@ function completionMark(project){
   const age=outDate?`<time class="project-stage-date" datetime="${out[1]}-${out[2]}-${out[3]}" title="${esc(publishedLabel)}">${esc(outDate.toLocaleDateString('uk-UA',{day:'numeric',month:'long'}))}</time>`
     :project.published?.at?''
     :when?`<time class="project-stage-date" datetime="${when.datetime}" title="${esc(when.fullDate)}">${esc(when.text)}</time>`:'';
+  // an export that stopped says so on the card, where the author looks, in the editor chip's colour, and the click
+  // starts it again (user, 28 November 2026: «експорт зупинився на 40%, продовжити… на карточці… щоб видно було»)
+  const stoppedExport=project.export_stopped;
+  if(stoppedExport&&!project.published?.at){
+    const resume=`<span class="project-export-go project-export-stopped" role="button" tabindex="0" title="${esc(stoppedExport.error||'Експорт не завершився')}"><span aria-hidden="true">⚠</span><span>Експорт зупинився на ${Math.round(Number(stoppedExport.progress)||0)}% · Продовжити</span></span>`;
+    return resume;   // the chip alone: «Кадри ✓» beside it pushed it over the film's length on a narrow card
+  }
   // the release date stands after the blue «published» check (user, 19 November 2026)
   return `<span class="project-completion${stage==='export'?' is-exported':''}" aria-label="${label}: готово">${outDate?'':age}${stage==='export'?'':`<span>${label}</span>`}${published?'':'<svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 10 4 4 8-8"/></svg>'}${published}${outDate?age:''}</span>${autoPublish?coming('Публікація починається'):publish}${exportGo}`;   // the blue check replaces the export's (user, 19 November 2026)
 }

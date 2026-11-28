@@ -3644,3 +3644,10 @@ button:is(.primary,.secondary,.outline):disabled:hover,button.ui-action:is(.prim
 .heygen-avatar-large-close{background:transparent;color:#b9bbc3}
 .heygen-avatar-large-close:hover{background:#ffffff14;color:#fff}
 .heygen-avatar-large-close svg{width:14px;height:14px;stroke-width:1.4}
+
+/* a stopped export on the card: the editor's «Експорт зупинився» chip colours (user, 28 November 2026) */
+.project-export-go.project-export-stopped,.project-export-go.project-export-stopped:hover,.project-export-go.project-export-stopped:focus-visible{background:#2a1414;color:#ffb4a8;border:1px solid #6b2d2d;box-shadow:none;filter:none}
+.project-export-go.project-export-stopped{margin-left:0;min-width:0;max-width:100%;overflow:hidden}
+.project-export-go.project-export-stopped>span:last-child{overflow:hidden;text-overflow:ellipsis}
+.project-export-go.project-export-stopped:hover,.project-export-go.project-export-stopped:focus-visible{background:#361919;border-color:#8a3a3a}
+
