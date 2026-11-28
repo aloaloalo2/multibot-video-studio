@@ -267,12 +267,12 @@ def totals(data: dict, credit_rate=None) -> dict:
     for name, item in result.items():
         item["amount"] = round(item["amount"], 6)
         item["unit"] = "credits" if name == "elevenlabs" else "usd"
-        item["usd"] = round(item["amount"] * credit_rate * 1.20, 6) if name == "elevenlabs" and number(credit_rate) else item["amount"] if name != "elevenlabs" else 0. if not item['requests'] else None
+        item["usd"] = round(item["amount"] * credit_rate, 6) if name == "elevenlabs" and number(credit_rate) else item["amount"] if name != "elevenlabs" else 0. if not item['requests'] else None
     result["elevenlabs"]["estimated"] |= bool(result["elevenlabs"]["requests"])
     result["claude_code"]["equivalent"] = True
     voice_usd = language_voice["fishaudio"] + language_voice["heygen"]
     if language_voice["elevenlabs"]:
-        voice_usd = voice_usd + language_voice["elevenlabs"] * credit_rate * 1.20 if number(credit_rate) else None
+        voice_usd = voice_usd + language_voice["elevenlabs"] * credit_rate if number(credit_rate) else None
     return {"providers": result, "languages_usd": round(language_usd, 6),
             "language_voice_usd": round(voice_usd, 6) if voice_usd is not None else None,
             "language_voice_estimated": bool(language_voice["elevenlabs"]), "updated_at": time.time()}

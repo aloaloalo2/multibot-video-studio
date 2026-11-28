@@ -4,7 +4,7 @@
 OpenRouter (pictures, thumbnails, translations, DeepSeek) is read from the key's own account counters: usage_daily,
 usage_weekly and usage_monthly, which OpenRouter counts by UTC day, week and month. HeyGen and ElevenLabs narration come
 from the studio's own receipts in the same UTC windows; ElevenLabs credits are turned into dollars by the saved plan rate
-with the author's 20% tax, as on the project cards. Claude and Codex run on subscriptions and have no price here."""
+with no tax added (user, 28 November 2026: «елевен лабс прибери податок 20»), as on the project cards. Claude and Codex run on subscriptions and have no price here."""
 from __future__ import annotations
 
 import json
@@ -46,7 +46,7 @@ BACKFILLED = "spending-ledger.backfilled"
 CLAUDE_BACKFILLED = "spending-ledger.claude-backfilled"
 # Claude runs on the subscription: its API-equivalent cost divided by the author's coefficient, as on the project cards
 # (frontend/project-costs.js claudeSubscriptionDivisor; user, 18 November 2026: «клод не рахується?»)
-CLAUDE_DIVISOR = 35
+CLAUDE_DIVISOR = 40   # 35 until 28 November 2026 (user: «на 40 зроби»)
 
 
 def backfill() -> None:
@@ -186,7 +186,7 @@ def receipts(now: float) -> dict:
         if not isinstance(amount, (int, float)):
             continue
         usd = (amount if row["provider"] in ("heygen", "fishaudio") else amount / CLAUDE_DIVISOR if row["provider"] == "claude_code"
-               else (amount * rate * 1.2 if rate else 0))
+               else (amount * rate if rate else 0))
         for window, start in edges.items():
             if row["at"] >= start:
                 totals[row["provider"]][window] += usd
@@ -264,7 +264,7 @@ def channel_summary(cid: str, now: float | None = None) -> dict:
         provider, amount = row.get("provider"), row.get("amount")
         if provider not in totals or not isinstance(amount, (int, float)):
             continue
-        usd = (amount / CLAUDE_DIVISOR if provider == "claude_code" else amount * rate * 1.2 if provider == "elevenlabs"
+        usd = (amount / CLAUDE_DIVISOR if provider == "claude_code" else amount * rate if provider == "elevenlabs"
                else amount) if (provider != "elevenlabs" or rate) else 0
         for window in ("day", "month"):
             if row["at"] >= edges[window]:

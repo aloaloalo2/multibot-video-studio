@@ -67,7 +67,7 @@ function performanceRows(data){
 function performanceCost(cost){
   if(!cost?.recorded)return {label:'Немає даних',title:'Збережених витрат для цього процесу ще немає.'};
   let amount=0,estimated=false,unknown=false;const notes=[];
-  const divisor=typeof claudeSubscriptionDivisor==='number'?claudeSubscriptionDivisor:35;
+  const divisor=typeof claudeSubscriptionDivisor==='number'?claudeSubscriptionDivisor:40;
   const money=value=>`$${value.toFixed(value>0&&value<.001?6:value>0&&value<.01?4:2)}`;
   const names={claude_code:'Claude Code',openrouter:'OpenRouter',heygen:'HeyGen',fishaudio:'Fish Audio',elevenlabs:'ElevenLabs'};
   for(const [provider,row] of Object.entries(cost.providers||{})){

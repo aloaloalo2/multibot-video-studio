@@ -88,8 +88,8 @@ test('new reports are sorted defensively and keep tiny tasks and previews out of
   assert.deepEqual(JSON.parse(JSON.stringify(kit.map(row=>[row.id,row.cost_only]))),[['kit',true],['thumbnail',true]]);
 });
 test('costs use the saved subscription convention and explain tokens without adding another row',()=>{
-  const f=fixture(),cost=f.context.performanceCost({recorded:true,providers:{claude_code:{requests:1,usd:35},openrouter:{requests:1,usd:.02}},tokens:{input:100,output:200,cache_read:300}});
-  assert.equal(cost.label,'≈ $1.02');assert.match(cost.title,/API-еквівалент \$35.00 ÷ 35/);assert.match(cost.title,/вхід 100, вихід 200, читання кешу 300/);
+  const f=fixture(),cost=f.context.performanceCost({recorded:true,providers:{claude_code:{requests:1,usd:40},openrouter:{requests:1,usd:.02}},tokens:{input:100,output:200,cache_read:300}});
+  assert.equal(cost.label,'≈ $1.02');assert.match(cost.title,/API-еквівалент \$40.00 ÷ 40/);   // ÷ 40 since 28 November 2026assert.match(cost.title,/вхід 100, вихід 200, читання кешу 300/);
   assert.equal(f.context.performanceCost({recorded:true,providers:{heygen:{requests:139,usd:0,estimated:true}}}).label,'$0.00');
   assert.equal(f.context.performanceCost({recorded:false}).label,'Немає даних');
   assert.equal(f.context.performanceCost({recorded:true,providers:{openrouter:{requests:1,usd:0,unknown:1}}}).label,'Немає даних');

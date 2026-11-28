@@ -31,7 +31,7 @@ class ProjectCostsTest(unittest.TestCase):
         self.assertEqual(totals['fishaudio']['requests'],1)
         self.assertEqual(totals['fishaudio']['usd'],.12)
         self.assertEqual(totals['elevenlabs']['amount'],100)
-        self.assertAlmostEqual(totals['elevenlabs']['usd'],.024)
+        self.assertAlmostEqual(totals['elevenlabs']['usd'],.02)   # no tax since 28 November 2026
         self.save('narration/job.json',{'status':'done','provider':'elevenlabs','estimated_credits':20,'started_at':2})
         self.assertEqual(project_costs.totals(self.collect(data),.0002)['providers']['elevenlabs']['amount'],120)
 
@@ -44,7 +44,7 @@ class ProjectCostsTest(unittest.TestCase):
         self.save('languages/es/parts/request.json',{'provider':'elevenlabs'})
         self.save('languages/es/parts/requests.json',[{'request_id':'r1','status':'complete','actual_cost':500}])
         totals=project_costs.totals(self.collect(),.0002)
-        self.assertAlmostEqual(totals['language_voice_usd'],500*.0002*1.2);self.assertTrue(totals['language_voice_estimated'])
+        self.assertAlmostEqual(totals['language_voice_usd'],500*.0002);self.assertTrue(totals['language_voice_estimated'])
 
     def test_usage_deduplication_and_claude_reports_are_separate(self):
         receipt={'request_id':'or1','usage':{'cost':.02}}
@@ -68,7 +68,7 @@ class ProjectCostsTest(unittest.TestCase):
         result=project_costs.totals(self.collect(),.0002)['providers']['elevenlabs']
         self.assertEqual(result['requests'],2)
         self.assertEqual(result['amount'],60)
-        self.assertEqual(result['usd'],.0144)
+        self.assertEqual(result['usd'],.012)
         self.assertTrue(result['estimated'])
 
     def test_cache_reuse_has_no_paid_charge_and_missing_receipts_are_not_zero(self):

@@ -192,9 +192,9 @@ def spec(project, text):
     if credits is not None:
         rate=store.read_json(store.DATA_ROOT/'eleven-credit-usd.json',{}).get('credit_usd_rate')
         if not rate:rate=lab.eleven_api.balance().get('credit_usd_rate')
-        if rate:usd=credits*rate*1.20
+        if rate:usd=credits*rate   # no 20% tax since 28 November 2026 (user: «прибери податок 20»)
         if credits==0:usd=0
-    return settings,ref,entries,{'total':len(entries),'cached':sum(x['cached'] for x in entries),'characters':count,'provider':settings['provider'],'estimated_credits':credits,'estimated_usd':round(usd,6) if usd is not None else None,'tax_included':credits is not None}
+    return settings,ref,entries,{'total':len(entries),'cached':sum(x['cached'] for x in entries),'characters':count,'provider':settings['provider'],'estimated_credits':credits,'estimated_usd':round(usd,6) if usd is not None else None,'tax_included':False}
 
 def select_source(pid, mode):
     if mode not in {'script','file'}:raise store.StudioError('Виберіть script або file')

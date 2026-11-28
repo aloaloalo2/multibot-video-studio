@@ -1,6 +1,6 @@
 // Project cost receipts are loaded only on hover/focus, cached between card redraws.
 const projectCostCache=new Map(),projectCostPending=new Map();
-const claudeSubscriptionDivisor=35;
+const claudeSubscriptionDivisor=40;   // 35 until 28 November 2026
 const projectCostIcons={
   heygen:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4v16M19 4v16M5 12h14"/></svg>',
   openrouter:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h5m-2-2 2 2-2 2m2-2c5 0 3-7 8-7h5m-3-3 3 3-3 3M8 12c5 0 3 7 8 7h5m-3-3 3 3-3 3"/></svg>',
