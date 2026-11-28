@@ -191,39 +191,6 @@ def interval(project: dict) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) and value >= 1 else 1
 
 
-def scheduled_days(project: dict) -> set:
-    """The days the studio itself already scheduled for this channel's other episodes (their published.json): the session
-    read the last date off YouTube's «Контент» list by eye, took 1 December for 3 December and put a second Космос PRO
-    video on 3 December 15:00 (user, 28 November 2026: «ролики публікувались на один той самий день… це ж помилка»)."""
-    days = set()
-    for marker in (DATA / "projects").glob("*/published.json"):
-        if marker.parent.name == project.get("id"):
-            continue
-        mark = read_json(marker, {}) or {}
-        when = str(mark.get("scheduled") or "")[:10]
-        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", when):
-            continue
-        other = read_json(marker.parent / "project.json", {}) or {}
-        if other.get("channel_id") == project.get("channel_id"):
-            days.add(when)
-    return days
-
-
-def channel_slot(project: dict, last: str, now=None) -> dict:
-    """`slot` from the later of the date the session read and the last day the studio scheduled for the channel, moved on by
-    the channel's interval while that day already has a video of the channel."""
-    from datetime import date, datetime, timedelta
-    taken = scheduled_days(project)
-    known = max(taken) if taken else ""
-    if last in ("", "none") or (known and known > last):
-        last = known or last
-    days = interval(project)
-    found = slot(last, now=now, days=days)
-    while found["date"] in taken:
-        found = {"date": (date.fromisoformat(found["date"]) + timedelta(days=days)).isoformat(), "time": "15:00"}
-    return found
-
-
 def slot(last: str, now=None, days: int = 1) -> dict:
     """When the next video of a channel goes out: `days` (the channel's interval) after the last scheduled (or, with none scheduled, the last
     published) video, but never before today; 15:00, or on today the next quarter hour at least 30 minutes ahead within
@@ -484,7 +451,7 @@ def main(argv=None) -> int:
             print(json.dumps(slot(args[1])))
         elif args[:1] == ["slot"] and len(args) == 3:
             # slot P DATE: the channel's own interval between videos
-            print(json.dumps(channel_slot(studio.find_project(args[1]), args[2])))
+            print(json.dumps(slot(args[2], days=interval(studio.find_project(args[1])))))
         elif args[:1] == ["queue"]:
             print(json.dumps(read_json(QUEUE, []), ensure_ascii=False))
         elif args[:1] in (["step"], ["failed"]) and len(args) == 3:

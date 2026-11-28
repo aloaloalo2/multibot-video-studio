@@ -25,32 +25,6 @@ class SlotTest(unittest.TestCase):
         self.assertEqual(y.interval({"channel": {"settings": {"publish_interval_days": 4}}}), 4)
 
 
-class ChannelSlotTest(unittest.TestCase):
-    """28 November 2026: the session read 1 December off YouTube for the last Космос PRO video, which stood on 3 December,
-    and a second video got 3 December 15:00. The studio's own scheduled days win over a misread date and are never reused."""
-
-    def test_a_misread_date_never_lands_on_a_taken_day(self):
-        import json, tempfile
-        from unittest.mock import patch
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            for pid, channel, when in (("a" * 24, "c", "2026-12-01 15:00"), ("b" * 24, "c", "2026-12-03 15:00"),
-                                       ("c" * 24, "other", "2026-12-09 15:00")):
-                (root / "projects" / pid).mkdir(parents=True)
-                (root / "projects" / pid / "project.json").write_text(json.dumps({"channel_id": channel}))
-                (root / "projects" / pid / "published.json").write_text(json.dumps({"scheduled": when}))
-            project = {"id": "d" * 24, "channel_id": "c", "channel": {"settings": {"publish_interval_days": 2}}}
-            now = datetime(2026, 11, 28, 19, 0)
-            with patch.object(y, "DATA", root):
-                self.assertEqual(y.scheduled_days(project), {"2026-12-01", "2026-12-03"})
-                self.assertEqual(y.channel_slot(project, "2026-12-01", now), {"date": "2026-12-05", "time": "15:00"})
-                self.assertEqual(y.channel_slot(project, "2026-12-07", now), {"date": "2026-12-09", "time": "15:00"})
-                (root / "projects" / ("e" * 24)).mkdir()
-                (root / "projects" / ("e" * 24) / "project.json").write_text(json.dumps({"channel_id": "c"}))
-                (root / "projects" / ("e" * 24) / "published.json").write_text(json.dumps({"scheduled": "2026-12-09 15:00"}))
-                self.assertEqual(y.channel_slot(project, "2026-12-07", now), {"date": "2026-12-11", "time": "15:00"})
-
-
 class CancelTest(unittest.TestCase):
     def test_a_cancelled_episode_is_refused_at_every_step(self):
         import json, tempfile
