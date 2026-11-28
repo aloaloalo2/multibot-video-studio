@@ -1233,7 +1233,7 @@ def settle(pid: str, project: dict | None = None) -> dict | None:
     made, otherwise stopped, so the button can be pressed again. Returns the request as it stands."""
     project = project or store.load_project(pid)
     request = project.get("production_request") or {}
-    if review_only_failure(request) and pid not in ACTIVE:
+    if (review_only_failure(request) or cut_after_drawing(request)) and pid not in ACTIVE:
         return settle_review_failure(pid, project, request)
     if request.get("status") not in {"requested", "in_progress"} or pid in ACTIVE:
         return request or None
@@ -1271,6 +1271,15 @@ def review_only_failure(request: dict) -> bool:
             and bool(errors) and all(look_error(error) for error in errors))
 
 
+def cut_after_drawing(request: dict) -> bool:
+    """A run a restart or a missing frame paused, to be checked once for frames drawn meanwhile or before the cut: the
+    Karl film read «Студію перезапущено… натисніть «Продовжити»» with all 86 frames made, so its card showed neither the
+    pause nor the round play (user, 28 November 2026: «нема кнопки плей»). settle_review_failure finishes it when every
+    frame is drawn and leaves it paused otherwise."""
+    return (request.get('status') == 'failed' and bool(request.get('paused')) and request.get('paused_by') in {'restart', 'incomplete'}
+            and not request.get('limit') and not request.get('review_settle_tried'))
+
+
 def settle_review_failure(pid: str, project: dict, request: dict) -> dict:
     """Such a run is done now, as the end of a run decides it today (user, 17 November 2026: «у дівчини пише не вдались
     кадри» on a film whose frames were all made): frames waiting for a look and bugs the look still saw stay in the
@@ -1285,8 +1294,9 @@ def settle_review_failure(pid: str, project: dict, request: dict) -> dict:
     if not review.get('passed'):
         review = bugs_to_fix(project, final, review) or review
     if not review.get('passed'):
-        return set_request(pid, review_settle_tried=True)
-    saved = set_request(pid, status='done', error=None, quality=review)
+        # a real fault the check found stays on the card as stopped, with its round play
+        return set_request(pid, review_settle_tried=True, quality=review)
+    saved = set_request(pid, status='done', error=None, quality=review, paused=False)
     if not request.get('repair_frames'):
         razgon_sound.start(pid, "production")
         film_sounds(pid)

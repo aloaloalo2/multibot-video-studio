@@ -264,5 +264,19 @@ class BugsToFixTest(unittest.TestCase):
         self.assertEqual(done["look_later"], [61, 63])
         self.assertTrue(production.review_only_failure({"status": "failed", "quality": {"errors": errors}}))
 
+    def test_a_run_cut_by_a_restart_after_its_frames_is_done(self):
+        """28 November 2026, Karl's tides: all 86 frames made, the restart's pause hid the play and the done check."""
+        cut = {"status": "failed", "paused": True, "paused_by": "restart", "frames": 86, "error": "Студію перезапущено"}
+        self.assertTrue(production.cut_after_drawing(cut))
+        self.assertFalse(production.cut_after_drawing({**cut, "paused_by": "user"}))
+        self.assertFalse(production.cut_after_drawing({**cut, "review_settle_tried": True}))
+        saved = {}
+        with patch.object(production, "drawn", return_value=True), \
+             patch.object(production.production_quality, "check", return_value={"passed": True, "errors": []}), \
+             patch.object(production, "set_request", side_effect=lambda pid, **f: saved.update(f) or f), \
+             patch.object(production.razgon_sound, "start"), patch.object(production, "film_sounds"):
+            production.settle_review_failure("p", {}, cut)
+        self.assertEqual((saved["status"], saved["paused"], saved["error"]), ("done", False, None))
+
     def test_a_full_disk_reads_as_a_full_disk(self):
         self.assertIn("закінчилось місце", production.DISK_FULL)
