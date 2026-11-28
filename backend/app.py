@@ -1503,9 +1503,13 @@ def capcut_ready(project: dict) -> list:
     не показуються ще такими, як вони мають бути»)."""
     with CAPCUT_READY_LOCK:
         _capcut_load(project["id"])
-    drawn = CAPCUT_READY.get(project["id"], {})
+    drawn, films = CAPCUT_READY.get(project["id"], {}), CAPCUT_URLS.get(project["id"], {})
+    # a seam drawn as a film counts only while its two frames are as drawn: a frame whose motion the agent changed later
+    # kept the seam blue, the editor no longer took the old film and played no transition until it was drawn again
+    # (user, 28 November 2026: «14-15 кадр нема переходу хоча є синій перехід»); a Razgon code seam has no film
     return [j["id"] for j in project.get("join_transitions", []) if j.get("type") in joins.CAPCUT
-            and drawn.get(j["id"]) == (j.get("type"), round(float(j.get("duration", 0)), 3), round(float(j.get("seam", 0)), 3))]
+            and drawn.get(j["id"]) == (j.get("type"), round(float(j.get("duration", 0)), 3), round(float(j.get("seam", 0)), 3))
+            and (j["id"] not in films or films[j["id"]][0] == capcut_sides(project, j))]
 
 
 def capcut_ready_urls(project: dict, ready: list) -> dict:

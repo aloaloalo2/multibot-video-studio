@@ -164,6 +164,8 @@ class CapcutReadyFilmTest(unittest.TestCase):
                 self.assertEqual(app.capcut_ready_urls(p, ready), {join['id']: url})
                 p['tracks'][1]['clips'][0]['keyframes'] = [{'time': 0, 'scale': 1.1}]   # the frame after the seam moves now
                 self.assertEqual(app.capcut_ready_urls(p, app.capcut_ready(p)), {})
+                # nor is it marked drawn: it stayed blue and played nothing (28 November 2026: «нема переходу хоча є синій»)
+                self.assertEqual(app.capcut_ready(p), [])
                 film.unlink()
                 app.CAPCUT_READY.clear(); app.CAPCUT_URLS.clear()
                 self.assertEqual(app.capcut_ready(p), [])   # its film gone, the seam is drawn again
