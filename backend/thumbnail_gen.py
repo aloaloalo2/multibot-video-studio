@@ -360,13 +360,49 @@ def references(folder: Path) -> list[Path]:
     return sorted(style.glob("Референс кадру*.png"), key=lambda path: ("(" in path.name, path.name))[:2] if style.is_dir() else []
 
 
-def brief(title: str, script: str, wishes: str, folder: Path, refs: list[Path]) -> str:
-    """What Claude gets: the channel's bar, the video, the author's wishes; it answers with the prompt alone."""
+RECENT_COUNT = 4   # the channel's newest other covers the prompt writer must not repeat
+
+
+def recent_covers(project: dict, work: Path, limit: int = RECENT_COUNT) -> list[Path]:
+    """Copies of the channel's newest other covers («Інше прев'ю каналу N.png»), for the prompt writer only: each prompt
+    used to be written alone and came out the same picture (user, 28 November 2026, Antropov: the host on the right
+    pointing left, a big caption top left, on every card: «студія робить шаблонні прев'юшки. А так не має бути»)."""
+    copies = []
+    if not project.get("channel_id"):
+        return copies
+    for pid in style_sources(project["channel_id"], project["id"], limit):
+        try:
+            copy = work / f"Інше прев'ю каналу {len(copies) + 1}.png"
+            shutil.copyfile(without_logo(pid, keep_dir(pid) / PREVIEW), copy)
+            copies.append(copy)
+        except (OSError, ValueError, store.StudioError):
+            continue   # one unreadable cover never stops the thumbnail
+    return copies
+
+
+def unlike(recent: list[Path]) -> str:
+    if not recent:
+        return ""
+    files = "; ".join(str(path) for path in recent)
+    return f"""
+Останні прев'ю цього каналу (подивись їх інструментом Read): {files}
+Вони не зразок, а те, чого не повторювати. Глядач гортає канал і бачить їх поруч, тож твоє прев'ю має одразу відрізнятися
+від кожного: іншою будовою кадру (порівняння, один предмет на весь кадр, людина в ситуації, схема чи орган, до і після,
+крупне обличчя з емоцією), іншим місцем і крупністю ведучого (інша сторона, ближче чи далі, або без нього, коли він не
+потрібен), іншим жестом і емоцією (не той самий палець, що вказує), іншим місцем, формою й кольором напису, іншим фоном і
+світлом. Постійні побажання каналу виконуй, але кожного разу по-новому. Перед відповіддю порівняй свій задум з кожним із
+цих прев'ю: якщо він схожий композицією хоч на одне, придумай інший.
+"""
+
+
+def brief(title: str, script: str, wishes: str, folder: Path, refs: list[Path], recent: list[Path] | None = None) -> str:
+    """What Claude gets: the channel's bar, the video, the author's wishes, the channel's recent covers to differ from;
+    it answers with the prompt alone."""
     prompts, pictures = examples(folder)
     attached = ", ".join(path.name for path in refs) or "немає"
     wished = f"\nПобажання автора, вони головні:\n{wishes.strip()}\n" if wishes.strip() else ""
     approved = "\n\n".join(f"--- {path.name}\n{path.read_text(encoding='utf-8', errors='replace').strip()[:3000]}" for path in prompts)
-    approved = f"\nТак писалися схвалені прев'ю каналу. Тримай цю будову, тон і рівень деталей:\n\n{approved}\n" if approved else ""
+    approved = f"\nТак писалися схвалені прев'ю каналу. Тримай їхній тон і рівень деталей, але не їхню композицію:\n\n{approved}\n" if approved else ""
     look = "; ".join(str(path) for path in [*refs, *pictures])
     look = f"\nПеред тим як писати, подивись інструментом Read ці картинки, щоб знати стиль і героя: {look}\n" if look else ""
     # a Razgon episode describes its heroes and world in the story bible: the thumbnail's hero must be the video's
@@ -387,7 +423,7 @@ def brief(title: str, script: str, wishes: str, folder: Path, refs: list[Path]) 
 правий нижній кут вільний під тривалість відео; без рамок і водяних знаків.
 Візьми зі сценарію один момент, на який глядач клікне, і опиши його точно: герой, поза, вираз обличчя, предмети, фон,
 світло, кольори, де стоїть текст.
-{approved}{look}
+{approved}{look}{unlike(recent or [])}
 Сценарій ролику:
 {script.strip()[:12000]}
 
@@ -644,7 +680,7 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
             elif writer == "trending":
                 written, answer = trending(title, script, wishes, name), {"total_cost_usd": 0}
             else:
-                text = brief(title, script, wishes, folder, prompt_refs) + hero_rules
+                text = brief(title, script, wishes, folder, prompt_refs, recent_covers(project, work)) + hero_rules
                 written, answer = write_prompt(text, folder.parent, work, effort=store.channel_effort(project))
             note = (("[Клонування · Codex] " if clone else "[Трендове прев’ю · Codex] ") if writer == "trending" else "") + written
         if hero:

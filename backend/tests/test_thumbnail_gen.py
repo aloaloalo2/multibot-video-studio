@@ -63,6 +63,22 @@ class ThumbnailTest(unittest.TestCase):
         self.assertTrue(drawing.startswith("A neon close-up."))
         self.assertIn('"Превью v2.png"', drawing)
 
+    def test_the_channels_recent_covers_are_shown_as_what_not_to_repeat(self):
+        # 28 November 2026: every Antropov cover came out the host on the right pointing left with a caption top left
+        work = self.studio / "recent"; work.mkdir()
+        covers = []
+        for pid in ("a" * 24, "b" * 24):
+            cover = self.studio / f"{pid}.png"; cover.write_bytes(b"png " + pid.encode()); covers.append(cover)
+        with patch.object(thumbnail_gen, "style_sources", return_value=["a" * 24, "b" * 24]), \
+             patch.object(thumbnail_gen, "without_logo", side_effect=lambda pid, _: self.studio / f"{pid}.png"):
+            recent = thumbnail_gen.recent_covers({"id": "x", "channel_id": "c"}, work)
+        self.assertEqual([path.name for path in recent], ["Інше прев'ю каналу 1.png", "Інше прев'ю каналу 2.png"])
+        self.assertEqual(recent[1].read_bytes(), covers[1].read_bytes())
+        text = thumbnail_gen.brief("T", "S", "", self.episode, [], recent)
+        for part in (str(recent[0]), "не зразок, а те, чого не повторювати", "іншим жестом"):
+            self.assertIn(part, text)
+        self.assertNotIn("чого не повторювати", thumbnail_gen.brief("T", "S", "", self.episode, []))
+
     def test_trending_codex_gets_english_rules_and_original_language_content(self):
         text = thumbnail_gen.trending("Що буде завтра?", "Українська озвучка.", "Більше емоції", "Превью v2.png")
         for part in ("40-70%", "Signal colours", "Peak action", "Concrete stakes", "Atmospheric integration",
