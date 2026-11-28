@@ -69,6 +69,33 @@ class ExportControlTest(unittest.TestCase):
                     if app.active_export(job['project_id']):app.cancel_export(job['id'])
                 wait(lambda:all(app.active_export(project['id']) is None for project in projects))
 
+    def test_motion_code_is_rendered_in_the_background_before_the_queue(self):
+        """28 November 2026: «експорт кнопка не ворк»: the press waited for minutes of motion-code renders."""
+        import threading, motion_code
+        project=store.create_project(store.channel_id(self.channel),'Prepare first')
+        ready={'stage':'audio_synced','plan_ready':True,'export_ready':True,'reason':''}
+        rendering,release,started=threading.Event(),threading.Event(),[]
+        def slow_render(_project):rendering.set();release.wait(5)
+        def queued(job,*args):started.append(job['id'])
+        state={'pending':[{'id':'c'}]}
+        with patch.object(store,'plan_readiness',return_value=ready), \
+             patch.object(motion_code,'pending',side_effect=lambda _p:state['pending']), \
+             patch.object(motion_code,'render_all',side_effect=slow_render), \
+             patch.object(app,'normalize_for_engine',return_value={'timeline_layers':[]}), \
+             patch.object(app,'_queued_render_worker',side_effect=queued):
+            job=app.start_export(project,True)                       # answers at once
+            self.assertEqual((job['status'],job['stage']),('queued','preparing'))
+            self.assertTrue(rendering.wait(2))
+            self.assertEqual(app.start_export(project,True)['id'],job['id'])   # a second press: the same job
+            self.assertEqual(app.active_export(project['id'])['id'],job['id'])
+            state['pending']=[]; release.set()
+            deadline=time.monotonic()+5
+            while not started and time.monotonic()<deadline:time.sleep(.02)
+            self.assertEqual(started,[job['id']])                    # queued under the same id
+        with app.JOBS_LOCK:
+            entry=app.ACTIVE_EXPORTS.pop(job['id'],None)
+        if entry and entry.get('project_guard'):entry['project_guard'].close()
+
     def test_export_is_blocked_while_agent_owns_project(self):
         project = store.create_project(store.channel_id(self.channel), 'Agent export lock')
         guard = app.agent_runtime.acquire_project_guard(project['id'], 'agent')

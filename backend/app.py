@@ -549,7 +549,7 @@ def _render_razgon_blocks(job: dict, entry: dict, mixed: dict, render_manifest: 
 def _export_queue_positions() -> None:
     """Called under JOBS_LOCK; queued jobs are ordered by their accepted submission."""
     waiting = [entry['job'] for entry in ACTIVE_EXPORTS.values()
-               if entry['job']['status'] == 'queued' and not entry['cancel']]
+               if entry['job']['status'] == 'queued' and not entry['cancel'] and not entry.get('preparing')]
     for position, job in enumerate(waiting, 1):
         if job.get('queue_position') != position:
             job['queue_position'] = position
@@ -565,7 +565,7 @@ def _queued_render_worker(job: dict, *args) -> None:
             entry = ACTIVE_EXPORTS[job['id']]
             while not entry['cancel']:
                 first = next((item['job']['id'] for item in ACTIVE_EXPORTS.values()
-                              if item['job']['status'] == 'queued' and not item['cancel']), None)
+                              if item['job']['status'] == 'queued' and not item['cancel'] and not item.get('preparing')), None)
                 if EXPORT_RUNNING is None and first == job['id']:
                     EXPORT_RUNNING = job['id']
                     job.update(status='running', stage='preparing', queue_position=None)
@@ -769,7 +769,9 @@ def _render_worker(job: dict, render_manifest: Path, staging: Path, destination:
                     guard.close()
 
 
-def start_export(project: dict, confirmation: bool, bitrate=None) -> dict:
+def start_export(project: dict, confirmation: bool, bitrate=None, prepared: str | None = None) -> dict:
+    """`prepared` is the id of the job _prepare_then_export showed while it rendered the motion code: the export keeps it,
+    so the card, the channel's check and the export list follow one job."""
     if confirmation is not True:
         raise store.StudioError("Підтвердіть фінальний експорт після перегляду проєкту")
     # an export writes its scenes and the film before it publishes: on a nearly full disk it failed after an hour with
@@ -789,6 +791,9 @@ def start_export(project: dict, confirmation: bool, bitrate=None) -> dict:
     if project["id"] in production.ACTIVE or project["id"] in director.ACTIVE:
         # the export locks the project: the agent's next frame would fail and the film would miss what it is making
         raise store.StudioError("Над випуском зараз працює режисер або агент кадрів. Експортуйте, коли він закінчить", 409)
+    import motion_code
+    if not prepared and motion_code.pending(project):
+        return _prepare_then_export(project, bitrate)
     razgon = razgon_export.export_job(project)
     # a mixed episode: the bridge renders its Razgon code blocks first, then the engine exports the timeline
     mixed = razgon if razgon and razgon.get("mixed") else None
@@ -797,7 +802,7 @@ def start_export(project: dict, confirmation: bool, bitrate=None) -> dict:
     if not razgon:
         # the quality picked in the export window; an all-Razgon film keeps the bridge's own encoding
         manifest["video_bitrate"] = bitrate or choices[0]
-    jid = uuid.uuid4().hex[:24]
+    jid = prepared or uuid.uuid4().hex[:24]
     output_folder = Path(project["episode_path"])
     channel = store.get_channel_folder(project["channel_id"], include_disabled=True)
     if not store.under(output_folder, channel):
@@ -865,6 +870,47 @@ def start_export(project: dict, confirmation: bool, bitrate=None) -> dict:
             EXPORT_CONDITION.notify_all()
             raise
     return job
+
+
+def _prepare_then_export(project: dict, bitrate=None) -> dict:
+    """The motion-code clips the film still needs are rendered before the export is queued, in the background: rendered
+    inside the request they held «Експортувати» for minutes with nothing on the card, and every press started the same
+    renders again (user, 28 November 2026: «експорт кнопка не ворк»). The card shows the export at once («Готуємо
+    експорт»); a press meanwhile gets the same job, «Скасувати» stops it before the queue."""
+    pid = project["id"]
+    with JOBS_LOCK:
+        existing = active_export(pid)
+        if existing:
+            return existing
+        job = {"id": uuid.uuid4().hex[:24], "project_id": pid, "status": "queued", "progress": 0, "stage": "preparing",
+               "remaining_seconds": None, "output_path": None, "error": None}
+        save_job(job)
+        entry = {'job': job, 'process': None, 'cancel': False, 'preparing': True}
+        ACTIVE_EXPORTS[job["id"]] = entry
+
+    def work():
+        import motion_code
+        error = None
+        try:
+            motion_code.render_all(store.load_project(pid))
+        except Exception as failure:   # noqa: BLE001 - the export's own call reports a clip that still fails
+            print(f"[export] {pid}: motion code not rendered ahead: {failure}", flush=True)
+        with JOBS_LOCK:
+            ACTIVE_EXPORTS.pop(job["id"], None)
+            cancelled = entry['cancel']
+        if not cancelled:
+            try:
+                start_export(store.load_project(pid), True, bitrate, prepared=job["id"])
+                return
+            except Exception as failure:   # noqa: BLE001 - the card shows why
+                error = str(failure)
+        job.update(status='cancelled' if cancelled else 'failed', error=None if cancelled else error, queue_position=None)
+        save_job(job)
+        with EXPORT_CONDITION:
+            EXPORT_CONDITION.notify_all()
+
+    threading.Thread(target=work, name=f"export-prepare-{pid}", daemon=True).start()
+    return dict(job)
 
 
 STILL_SCRIPT = APP_ROOT / "engine" / "still.py"

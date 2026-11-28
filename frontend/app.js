@@ -746,7 +746,8 @@ async function startCardExport(project){
     if(result.job)state.projectExports.set(project.id,result.job);updateOverviewExports();pollOverviewExports(true);}
   catch(error){status(error.message,true);}
 }
-function exportQueueLabel(job){return `Експорт у черзі${Number(job?.queue_position)>0?` · №${Number(job.queue_position)}`:''}`;}
+// a job whose motion-code clips are rendered before it joins the queue (app._prepare_then_export)
+function exportQueueLabel(job){if(job?.stage==='preparing'&&!job.queue_position)return 'Готуємо експорт';return `Експорт у черзі${Number(job?.queue_position)>0?` · №${Number(job.queue_position)}`:''}`;}
 function updateOverviewExports(){
   for(const card of $('overview-projects').querySelectorAll('[data-project-id]')){
     const job=state.projectExports.get(card.dataset.projectId),active=!!job&&['queued','running','cancelling'].includes(job.status);

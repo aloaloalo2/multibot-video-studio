@@ -152,11 +152,8 @@ _TARGETS: dict = {}
 _TARGETS_LOCK = threading.Lock()
 
 
-def render_all(project: dict) -> None:
-    """Every motion-code clip of the project not rendered yet, RENDER_AT_ONCE at a time: the export rendered them one
-    after another, 48 changed clips some 20 minutes (26 November 2026, «швидкий… експорт»). A clip that fails here is
-    left to the export's own call, which reports it."""
-    from concurrent.futures import ThreadPoolExecutor
+def pending(project: dict) -> list[dict]:
+    """The motion-code clips of the project with no rendered video yet."""
     clips = [c for t in project.get("tracks", []) for c in t.get("clips", []) if c.get("content_type") == "code"]
     folder = store.cache_dir(project) / "motion-code"
     todo = []
@@ -166,6 +163,15 @@ def render_all(project: dict) -> None:
                 todo.append(clip)
         except (store.StudioError, ValueError, KeyError):
             continue
+    return todo
+
+
+def render_all(project: dict) -> None:
+    """Every motion-code clip of the project not rendered yet, RENDER_AT_ONCE at a time: the export rendered them one
+    after another, 48 changed clips some 20 minutes (26 November 2026, «швидкий… експорт»). A clip that fails here is
+    left to the export's own call, which reports it."""
+    from concurrent.futures import ThreadPoolExecutor
+    todo = pending(project)
     if len(todo) < 2:
         return
 
