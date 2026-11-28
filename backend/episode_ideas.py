@@ -564,12 +564,11 @@ AUTHENTIC = ('Не підручник, а те, що глядач навряд �
 # the author, 28 November 2026, after a channel was demonetized for repetitive content: «ця шаблонність, типу, в кінці
 # така сама, і мало… власних думок ведучого… трошечки аутентичності хочеться… не просто начитаний текст, як будто би
 # просто хтось читає чужі відео або вижимку з інтернету»
-VOICE = ('Голос людини, яка сама розібралась у темі, а не переказ чужого ролика чи вижимки з інтернету (автор, 28 листопада 2026). '
-    'Ведучий думає вголос: каже, яке поширене пояснення цієї теми, що його повторюють у роликах і статтях, неточне чи неповне і чому; '
-    'яке з показаних фактів, на його погляд, найважливіше і що з нього випливає для глядача; на що він сам поставив би там, де '
-    'науковці чи лікарі ще сперечаються. Такі місця звучать від першої особи звичайними словами («мне кажется», «я бы поставил на», '
-    '«по-моему, тут важнее другое») і спираються на щойно сказані факти. Ведучий ніколи не вигадує особистого досвіду, '
-    'поїздок, розмов, пацієнтів чи прочитаного, і правила каналу щодо особистих історій лишаються.')
+VOICE = ('Голос людини, яка сама розібралась у темі й веде свій блог, а не переказ чужого ролика чи вижимки з інтернету '
+    '(автор, 28 листопада 2026). Ведучий думає вголос від першої особи звичайними словами і спирається на щойно сказані факти. '
+    'Мова розмовна, як у живому блозі: речення можуть починатися з «А», «И», «Ну», «Вот», бути простими й не відшліфованими, '
+    'думку можна сказати ще раз простіше, але кожне речення закінчене й зрозуміле. Сленгу, грубих слів і показних запинок чи '
+    'самовиправлень не вигадуй. Ведучий ніколи не вигадує поїздок, розмов із конкретними людьми, прочитаного чи історій одужання.')
 ENDING = ('Кінцівка своя для кожного ролика (автор, 28 листопада 2026: «шаблонність… в кінці така сама»). Ролик закінчується '
     'останньою думкою ведучого про цю тему: його висновком, ставкою чи тим, що він радить зробити. Не закінчуй меню варіантів '
     'для коментарів («напишите, что вам ближе: X, Y или Z», «какое из… удивило вас сильнее») і не став перед закликом '
@@ -577,6 +576,75 @@ ENDING = ('Кінцівка своя для кожного ролика (авт�
     'питання про його власний досвід чи рішення в цій темі. Заклик підписатися, якщо його вимагають правила каналу, одним '
     'реченням із приводом саме з цієї теми, а обов\'язкові для каналу прощальні слова лишаються. previous_endings містить '
     'останні речення попередніх роликів каналу: твоя кінцівка не повторює їхньої будови й слів.')
+
+# the author, 28 November 2026: «не роби з цього шаблон… кожен раз… ідеально новий сценарій, по-іншому написаний… як людина
+# веде блог: сьогодні так сказала, завтра по-іншому… іскусний інтелект напише завжди кожен сценарій однаково». The studio
+# itself picks, at random, one way to build the story and a few spoken devices for each script, apart from the channel's
+# last ones; the writer is told to use only those this time. Code picks, the model writes.
+BUILDS = {
+    'myth': 'розібрати одну поширену пораду чи уявлення про тему, показати, де воно ламається, і що працює насправді',
+    'process': 'пройти з глядачем один процес у часі, крок за кроком, і показати, на якому кроці він ламається',
+    'questions': 'відповідати по черзі на питання, які людина справді ставить про цю тему, у тому порядку, в якому вони в неї виникають',
+    'case': 'тримати весь ролик на одній ситуації чи історії від початку до кінця й пояснювати тему через неї',
+    'rule_first': 'почати з практичного висновку чи правила, а далі пояснювати, чому воно працює і де його межі',
+    'puzzle': 'розгадувати одну загадку чи протиріччя: показати, що не сходиться, перебрати пояснення й дійти до найкращого',
+    'compare': 'порівняти два підходи чи дві версії і прямо сказати, яка краща і коли',
+    'try': 'будувати ролик довкола того, що глядач може сам перевірити, побачити чи порахувати',
+}
+DEVICES = {
+    'self_question': 'ведучий ставить собі питання, яке зараз виникло б у глядача, і сам на нього відповідає',
+    'objection': 'ведучий наводить те, що зазвичай кажуть люди («мне говорят…», «многие думают…»), і відповідає на це',
+    'live_conclusion': 'висновок будується на очах: кілька простих кроків міркування, з яких глядач доходить до нього разом із ведучим',
+    'analogy': 'одна побутова аналогія, знайома кожному, на якій тримається головне пояснення',
+    'common_advice': 'суперечка з порадою чи поясненням, які всюди повторюють, і чому вони неточні',
+    'repeat_thesis': 'головну тезу ролику ведучий свідомо повторює двічі-тричі в ключових місцях, щоразу простіше',
+    'attention': 'одне-два прямі звертання до глядача перед найважливішим фактом («вот послушайте», «поймите правильно»)',
+    'practice': ('на каналі про здоров\'я, де ведучий працює з людьми: типові ситуації з практики посередині чи ближче до кінця, ніколи на початку («часто спрашивают…», «бывает, '
+                 'человек приходит и говорит…»), без імен, віку, точних результатів і вигаданих історій одужання; якщо правила '
+                 'каналу забороняють особисті історії чи канал не про здоров\'я, цей прийом пропусти'),
+}
+STYLES_KEPT = 12
+
+
+def styles_path(cid):
+    return store.DATA_ROOT / 'channels' / cid / 'script-styles.json'
+
+
+def pick_style(cid, rng=None):
+    """One build and two or three devices for the next script: a build the channel's last three scripts did not use, and
+    devices apart from the last script's when enough are left."""
+    import random
+    rng = rng or random.SystemRandom()
+    rows = [row for row in (store.read_json(styles_path(cid), []) or []) if isinstance(row, dict)]
+    recent = {row.get('build') for row in rows[-3:]}
+    builds = [key for key in BUILDS if key not in recent] or list(BUILDS)
+    last = set((rows[-1].get('devices') or []) if rows else [])
+    devices = [key for key in DEVICES if key not in last]
+    devices = devices if len(devices) >= 3 else list(DEVICES)
+    return {'build': rng.choice(builds), 'devices': rng.sample(devices, rng.choice((2, 3)))}
+
+
+def remember_style(cid, style, title):
+    rows = [row for row in (store.read_json(styles_path(cid), []) or []) if isinstance(row, dict)]
+    rows.append({**style, 'title': title, 'at': time.time()})
+    try:
+        store.atomic_json(styles_path(cid), rows[-STYLES_KEPT:])
+    except OSError:
+        pass
+
+
+def style_note(style):
+    devices = '; '.join(DEVICES[key] for key in style['devices'] if key in DEVICES)
+    return ('\nПОДАЧА САМЕ ЦЬОГО РОЛИКУ (студія вибрала випадково, щоб ролики каналу звучали по-різному, як у блогера, який '
+            'щоразу розповідає інакше; автор, 28 листопада 2026). Будова: ' + BUILDS.get(style['build'], '') + '. Прийоми живої '
+            'мови цього разу: ' + devices + '. Інші прийоми з того ж набору (питання самому собі, відповідь на заперечення, висновок '
+            'на очах, побутова аналогія, суперечка з поширеною порадою, повтор головної тези, звертання до глядача, ситуації з '
+            'практики) цього разу не використовуй. Для вибраних прийомів старі обмеження брифу на питання самому собі, повтор '
+            'думки й звертання до глядача не діють. Будова й прийоми служать темі: не підганяй під них факти й не виставляй їх '
+            'напоказ.\n'
+            'Практична цінність обов\'язкова (автор: «практичні поради… дійсно додає цінності… а не просто інформація, якої дуже '
+            'багато в інтернеті»): ролик дає одну-три конкретні дії, які глядач може зробити, перевірити чи побачити сам. Їхнє '
+            'місце й форму вибирай під цю подачу, не завжди в кінці й не списком.\n')
 
 # the author, 26 November 2026: «сценариста… без тавтології хай пише»
 NO_TAUTOLOGY = ('Без тавтології (автор, 26 листопада 2026). Не повторюй те саме слово чи спільнокореневі слова в одному реченні '
@@ -1112,7 +1180,7 @@ def _work(cid, data):
             project = store.load_project(data['project_id'])
             original = project['voice_script']['text']
             session=data['author_session']
-            script = script_editing.self_review(project['id'],original,{**ctx,'selected_title':data['selected']['title'],'approved_opening':data.get('opening'),
+            script = script_editing.self_review(project['id'],original,{**ctx,'selected_title':data['selected']['title'],'approved_opening':data.get('opening'),'script_style':data.get('script_style'),
                 **(store.read_json(root/'script-authenticity.json',{}) or {})},data['target_words'],session,
                 lambda prompt,phase: opus(prompt,root,identity+'-'+phase,cid,session=session,resume=True,cost_category='script_editing'),root/(identity+'-receipt.json'))
             writing_jobs.check()
@@ -1157,6 +1225,12 @@ def _work(cid, data):
             data['ideas'] = validate_titles(result, ctx)
         else:
             brief += '\nSELECTED TITLE AND FULL SCRIPT TARGET: ' + json.dumps({'title': data['selected']['title'], 'target_words': data['target_words']}, ensure_ascii=False)
+            if stage != 'openings':
+                # one pick per episode: a retry or a resumed session keeps the same build and devices
+                if not isinstance(data.get('script_style'), dict):
+                    data['script_style'] = pick_style(cid)
+                    remember_style(cid, data['script_style'], data['selected']['title'])
+                brief += style_note(data['script_style'])
             if data.get('clone_reference'):
                 reference = data['clone_reference']
                 source = {'source_title': reference['title'], 'source_channel': reference.get('author', '')}
@@ -1247,7 +1321,7 @@ def _work(cid, data):
                 data.update(editing_status='running',completed=False)
                 save_draft(cid,data,make_current=False)
                 review_identity='self-review-'+identity
-                script=script_editing.self_review(data['project_id'],script,{**ctx,'selected_title':data['selected']['title'],'approved_opening':data.get('opening'),**authentic},
+                script=script_editing.self_review(data['project_id'],script,{**ctx,'selected_title':data['selected']['title'],'approved_opening':data.get('opening'),'script_style':data.get('script_style'),**authentic},
                     data['target_words'],session,
                     lambda prompt,phase: opus(prompt,root,review_identity+'-'+phase,cid,session=session,resume=True,cost_category='script_editing'),
                     root/(review_identity+'-receipt.json'))

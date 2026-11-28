@@ -486,7 +486,7 @@ class OwnVoiceAndEndingTest(unittest.TestCase):
 
     def test_the_brief_asks_for_the_hosts_voice_and_an_own_ending(self):
         brief = ideas.writer_brief({'channel': 'C'})
-        for part in ('думає вголос', 'не вигадує особистого досвіду', 'меню варіантів', 'previous_endings'):
+        for part in ('думає вголос', 'ніколи не вигадує', 'меню варіантів', 'previous_endings'):
             self.assertIn(part, brief)
         import script_editing
         self.assertTrue(any('template ending' in check.lower() for check in script_editing.CRITERIA))
@@ -497,3 +497,32 @@ class OwnVoiceAndEndingTest(unittest.TestCase):
         with patch.object(store, 'load_project', side_effect=lambda pid: {'voice_script': {'text': texts[pid]}}):
             self.assertEqual(ideas.previous_endings([{'id': 'a'}, {'id': 'b'}, {'id': 'c'}]),
                              ['Напишите в комментариях, что ближе. Подпишитесь!', 'Четыре. Берегите почки.'])
+
+
+class ScriptStyleTest(unittest.TestCase):
+    """28 November 2026: «не роби з цього шаблон… кожен раз… по-іншому написаний»: the studio picks one build and two or
+    three devices at random for each script, apart from the channel's last ones, and tells the writer to use only those."""
+
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        patcher = patch.object(store, 'DATA_ROOT', Path(self.tmp.name)); patcher.start(); self.addCleanup(patcher.stop)
+        (Path(self.tmp.name) / 'channels' / 'c').mkdir(parents=True)
+
+    def test_a_pick_avoids_the_last_three_builds_and_the_last_devices(self):
+        import random
+        for build, devices in (('myth', ['analogy', 'objection']), ('case', ['attention', 'practice']), ('puzzle', ['self_question', 'repeat_thesis'])):
+            ideas.remember_style('c', {'build': build, 'devices': devices}, 'T')
+        rng = random.Random(1)
+        for _ in range(40):
+            style = ideas.pick_style('c', rng)
+            self.assertNotIn(style['build'], {'myth', 'case', 'puzzle'})
+            self.assertIn(len(style['devices']), (2, 3))
+            self.assertFalse({'self_question', 'repeat_thesis'} & set(style['devices']))
+
+    def test_the_note_names_only_the_chosen_devices_and_asks_for_practical_value(self):
+        note = ideas.style_note({'build': 'compare', 'devices': ['analogy']})
+        self.assertIn(ideas.BUILDS['compare'], note)
+        self.assertIn(ideas.DEVICES['analogy'], note)
+        self.assertNotIn(ideas.DEVICES['objection'], note)
+        self.assertIn('Практична цінність', note)

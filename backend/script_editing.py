@@ -61,7 +61,7 @@ CRITERIA = [
     'The central concept of the topic never explained once so that it cannot be confused with a similar one («менее плотно» heard as «меньше вещества»); inverted word order («часть газа чёрная дыра выбрасывает»); a simplification that turns a fact false; an ending that contradicts or weakens the host\'s conclusion',
     'A conclusion or «if…, then…» that does not follow from the facts just given, or that claims more than a future test can show',
     # the author, 26 November 2026: «без тавтології хай пише»
-    'Tautology: the same word or a word of the same root twice in one sentence or in neighbouring sentences, one thought said twice in other words, pleonasms where the second word is already in the first («свободная вакансия», «вернулся обратно»); fix by rebuilding the sentence or a pronoun, never by cycling synonyms, and keep one name for one thing',
+    'Tautology (a repeated main thesis, a question to himself or an address to the viewer chosen in script_style are intended, keep them): the same word or a word of the same root twice in one sentence or in neighbouring sentences, one thought said twice in other words, pleonasms where the second word is already in the first («свободная вакансия», «вернулся обратно»); fix by rebuilding the sentence or a pronoun, never by cycling synonyms, and keep one name for one thing',
     # the author, 26 November 2026: «давати інформацію не банальну… аутентичності треба додавати»
     'Paragraphs made only of what everyone already knows about the topic (common_knowledge), an opening or ending resting on it, no behind-the-scenes detail of who found it, how it was observed or measured, what was believed before or what is still disputed',
     # the author, 28 November 2026: «ця шаблонність… в кінці така сама»
@@ -248,6 +248,7 @@ def self_review(pid, text, ctx, target_words, session, ask, receipt_file):
             'common_knowledge':ctx.get('common_knowledge') or [],'host_views':ctx.get('host_views') or [],
             'host_views_before':ctx.get('host_views_before') or [],
             'previous_endings':ctx.get('previous_endings') or [],
+            'script_style':ctx.get('script_style') or {},
             # the same compacted rules the writer got: without the model-routing sections (they once made Opus refuse a
             # normal script) and without repeated paragraphs, about 14 000 characters less on each pass (17 November 2026)
             'channel_context':writer_context.compact({k:ctx.get(k) for k in ('channel','audience','language','narrator',
