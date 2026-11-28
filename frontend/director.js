@@ -128,8 +128,22 @@ function voiceAssetId(plan,project){
   return Object.keys(project?.audio_gain || {})[0] || planned;
 }
 // src: another sound to play the same way (the «Мови» tab's translated voices)
+// a voice the studio made is there before its recognition puts it into the plan (user, 28 November 2026: «чого нема
+// плеєра як завжди»): the finished narration's own asset plays meanwhile
+function narratedAssetId(id){const job=narrationSeen[id];return job?.status==='done'&&job.asset_id?job.asset_id:null;}
+function ensureVoicePlayer(episode,id){
+  const body=episode?.querySelector('.episode-voice-body');
+  if(!body||body.querySelector(':scope>.voice-player'))return;
+  const add=()=>{if(!body.isConnected||state.project?.id!==id||body.querySelector(':scope>.voice-player'))return;const player=voicePlayer(id);if(player)body.prepend(player);};
+  if(voiceAssetId(state.plan,state.project)||narratedAssetId(id))return add();
+  // a narration seen running is asked again (at most every 10 s) until it is done; none at all is asked once
+  const asked=Number(body.dataset.narrationAsked)||0;
+  if(narrationSeen[id]===null||narrationSeen[id]?.status==='done'||Date.now()-asked<10000)return;
+  body.dataset.narrationAsked=String(Date.now());
+  api(`/api/projects/${encodeURIComponent(id)}/narration`).then(({job})=>{narrationSeen[id]=job||null;add();}).catch(()=>{});
+}
 function voicePlayer(id,src=null,options={}){
-  const asset=src?null:voiceAssetId(state.plan,state.project);
+  const asset=src?null:(voiceAssetId(state.plan,state.project) || narratedAssetId(id));
   if(!asset&&!src)return null;
   const box=document.createElement('div');box.className='voice-player';
   const audio=document.createElement('audio');audio.preload='metadata';audio.src=src || `/api/projects/${encodeURIComponent(id)}/assets/${encodeURIComponent(asset)}/file`;
@@ -189,6 +203,7 @@ function refreshEpisode(episode=document.querySelector('.episode')){
   if(state.view==='editor'&&!episode?.closest('#editor-production')){renderMontageMake();return;}
   if(!episode?.isConnected||episode.dataset.project!==state.project?.id)return;
   fillVoiceLine(episode.querySelector('.episode-voice'));
+  ensureVoicePlayer(episode,state.project.id);
   if(directMontage())return;
   fillDirectorLine(episode.querySelector('.episode-director'));
   fillMake(episode.querySelector('.episode-make'));
