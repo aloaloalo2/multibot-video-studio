@@ -361,41 +361,75 @@ def references(folder: Path) -> list[Path]:
 
 
 RECENT_COUNT = 4   # the channel's newest other covers the prompt writer must not repeat
+LAYOUT = "КОМПОЗИЦІЯ:"   # the writer's last line: one sentence on how its picture is built, kept and not drawn
 
 
-def recent_covers(project: dict, work: Path, limit: int = RECENT_COUNT) -> list[Path]:
-    """Copies of the channel's newest other covers («Інше прев'ю каналу N.png»), for the prompt writer only: each prompt
-    used to be written alone and came out the same picture (user, 28 November 2026, Antropov: the host on the right
-    pointing left, a big caption top left, on every card: «студія робить шаблонні прев'юшки. А так не має бути»)."""
-    copies = []
+def layout_path(pid: str, number: int) -> Path:
+    return keep_dir(pid) / f"Композиція прев'ю v{number}.txt"
+
+
+def split_layout(written: str) -> tuple[str, str]:
+    """The prompt without the writer's closing «КОМПОЗИЦІЯ: …» line, and that line's sentence."""
+    lines = written.rstrip().splitlines()
+    for index in range(len(lines) - 1, -1, -1):
+        line = lines[index].strip().strip("*").strip()
+        if line.upper().startswith(LAYOUT):
+            return "\n".join(lines[:index] + lines[index + 1:]).rstrip(), line[len(LAYOUT):].strip()[:400]
+        if line:
+            break
+    return written, ""
+
+
+def cover_layout(pid: str) -> str:
+    """One line on how the episode's cover is built: the writer's own sentence, or for a cover made before it was asked
+    for (28 November 2026) the start of its saved prompt."""
+    cover = next((item for item in versions(pid) if item.get("current") and not item.get("earlier")), None)
+    if not cover:
+        return ""
+    for source, size in ((layout_path(pid, cover["number"]), 400), (keep_dir(pid) / f"Промпт прев'ю v{cover['number']}.txt", 600)):
+        try:
+            return " ".join(source.read_text(encoding="utf-8", errors="replace")[:size].split())
+        except OSError:
+            continue
+    return ""
+
+
+def recent_layouts(project: dict, limit: int = RECENT_COUNT) -> list[str]:
+    """How the channel's newest other covers are built, a short line each: each prompt used to be written alone and came
+    out the same picture (user, 28 November 2026, Antropov: the host on the right pointing left, a big caption top left,
+    on every card: «студія робить шаблонні прев'юшки»). Text, not the pictures: «це ж дуже багато токенів»."""
     if not project.get("channel_id"):
-        return copies
+        return []
+    found = []
     for pid in style_sources(project["channel_id"], project["id"], limit):
         try:
-            copy = work / f"Інше прев'ю каналу {len(copies) + 1}.png"
-            shutil.copyfile(without_logo(pid, keep_dir(pid) / PREVIEW), copy)
-            copies.append(copy)
+            line = cover_layout(pid)
         except (OSError, ValueError, store.StudioError):
             continue   # one unreadable cover never stops the thumbnail
-    return copies
+        if line:
+            found.append(line)
+    return found
 
 
-def unlike(recent: list[Path]) -> str:
+def unlike(recent: list[str]) -> str:
+    asked = (f"\nОстаннім рядком після промпту напиши «{LAYOUT} …» одним реченням українською: тип сцени, де ведучий і що він "
+             "робить, де й якого кольору напис. Студія збереже цей рядок, щоб наступне прев'ю каналу не повторило твоє, і "
+             "прибере його з промпту.\n")
     if not recent:
-        return ""
-    files = "; ".join(str(path) for path in recent)
+        return asked
+    listed = "\n".join(f"- {line}" for line in recent)
     return f"""
-Останні прев'ю цього каналу (подивись їх інструментом Read): {files}
-Вони не зразок, а те, чого не повторювати. Глядач гортає канал і бачить їх поруч, тож твоє прев'ю має одразу відрізнятися
-від кожного: іншою будовою кадру (порівняння, один предмет на весь кадр, людина в ситуації, схема чи орган, до і після,
-крупне обличчя з емоцією), іншим місцем і крупністю ведучого (інша сторона, ближче чи далі, або без нього, коли він не
-потрібен), іншим жестом і емоцією (не той самий палець, що вказує), іншим місцем, формою й кольором напису, іншим фоном і
-світлом. Постійні побажання каналу виконуй, але кожного разу по-новому. Перед відповіддю порівняй свій задум з кожним із
-цих прев'ю: якщо він схожий композицією хоч на одне, придумай інший.
-"""
+Так побудовані останні прев'ю цього каналу:
+{listed}
+Це не зразок, а те, чого не повторювати: глядач бачить їх поруч, тож твоє прев'ю має одразу відрізнятися від кожного
+іншою будовою кадру (порівняння, один предмет на весь кадр, людина в ситуації, схема чи орган, до і після, крупне обличчя з
+емоцією), іншим місцем і крупністю ведучого (інша сторона, ближче чи далі, або без нього, коли він не потрібен), іншим
+жестом і емоцією (не той самий палець, що вказує), іншим місцем, формою й кольором напису, іншим фоном і світлом. Постійні
+побажання каналу виконуй, але кожного разу по-новому.
+""" + asked
 
 
-def brief(title: str, script: str, wishes: str, folder: Path, refs: list[Path], recent: list[Path] | None = None) -> str:
+def brief(title: str, script: str, wishes: str, folder: Path, refs: list[Path], recent: list[str] | None = None) -> str:
     """What Claude gets: the channel's bar, the video, the author's wishes, the channel's recent covers to differ from;
     it answers with the prompt alone."""
     prompts, pictures = examples(folder)
@@ -423,7 +457,7 @@ def brief(title: str, script: str, wishes: str, folder: Path, refs: list[Path], 
 правий нижній кут вільний під тривалість відео; без рамок і водяних знаків.
 Візьми зі сценарію один момент, на який глядач клікне, і опиши його точно: герой, поза, вираз обличчя, предмети, фон,
 світло, кольори, де стоїть текст.
-{approved}{look}{unlike(recent or [])}
+{approved}{look}{unlike(recent or []) if recent is not None else ""}
 Сценарій ролику:
 {script.strip()[:12000]}
 
@@ -680,8 +714,11 @@ def run(pid: str, title: str, script: str, wishes: str, writer: str = "claude", 
             elif writer == "trending":
                 written, answer = trending(title, script, wishes, name), {"total_cost_usd": 0}
             else:
-                text = brief(title, script, wishes, folder, prompt_refs, recent_covers(project, work)) + hero_rules
+                text = brief(title, script, wishes, folder, prompt_refs, recent_layouts(project)) + hero_rules
                 written, answer = write_prompt(text, folder.parent, work, effort=store.channel_effort(project))
+                written, layout = split_layout(written)
+                if layout:
+                    layout_path(pid, number).write_text(layout + "\n", encoding="utf-8")
             note = (("[Клонування · Codex] " if clone else "[Трендове прев’ю · Codex] ") if writer == "trending" else "") + written
         if hero:
             refs = [*refs, hero] if clone and not base else [hero, *refs]
