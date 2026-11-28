@@ -161,6 +161,12 @@ def normalized_kind(item: dict) -> str:
     raise ValueError(f"Unknown scene type: {kind or source}")
 
 
+# a gradient clip saved without its settings draws the preview's default (frontend/gradient.js defaultGradient): the
+# export failed on it with «KeyError: 'gradient'» at 40% (Astrophysics UA, 28 November 2026)
+DEFAULT_GRADIENT = {"colors": ["#eee5d5", "#d7c6ae", "#eadbc5", "#f4ecdf"], "points": [[.15, .15], [.85, .15], [.8, .85], [.2, .85]],
+                    "speed": .05, "amplitude": .14, "softness": .1}
+
+
 def animation_content_kind(clip: dict) -> str:
     explicit = str(clip.get("content_type") or "").lower()
     if explicit in {"shape", "color", "rectangle"}:
@@ -1615,7 +1621,7 @@ def timeline_scene(start: float, end: float, active: list[dict], work: Path, wid
             layer.update({"text": clip.get("text", ""), "color": clip.get("color", "white"),
                           "font_size": clip.get("font_size", 54)})
         else:
-            layer["source"] = str(clip.get('prepared_source') or transition_graphics.video(clip['graphic_style'],clip['duration'],clip.get('fps',30),width,height,work)) if graphic else str(gradient_background.video(clip['gradient'],clip['duration'],clip.get('fps',30),work)) if gradient else clip.get("source") or str(make_shape(clip, work))
+            layer["source"] = str(clip.get('prepared_source') or transition_graphics.video(clip['graphic_style'],clip['duration'],clip.get('fps',30),width,height,work)) if graphic else str(gradient_background.video(clip.get('gradient') or DEFAULT_GRADIENT,clip['duration'],clip.get('fps',30),work)) if gradient else clip.get("source") or str(make_shape(clip, work))
             if kind == "video":
                 layer["trim_start"] = clip["trim_start"] + elapsed
         if kind == "text" and clip.get("text_words"):

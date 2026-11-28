@@ -425,18 +425,19 @@ def expand(project: dict, project_file: Path, width: int, height: int, fps: int,
             if EFFECTS[name]["mode"] == "content":
                 clips.append(clip)   # second pass: it draws what lies below it, transitions and overlays included
                 continue
-            t, part = start, 0
-            end = start + duration
+            part = 0
             # the effect at its full from the frame's first moment, never building up from nothing at its start
             # or at each loop (user, 25 November 2026: «ефект… має від початку до кінця бути»)
             source, loop = _overlay_loop(name, fps, width, height, intro=False)
-            while t < end - 1e-6:
-                length = min(loop, end - t)
-                frames = render.frame_index(t + length, fps) - render.frame_index(t, fps)
-                if frames < 1:
-                    break
-                clips.append(_as_graphic(clip, source, t, length, f"-{part}"))
-                t += length
+            # the pieces in whole video frames: in seconds the last one could fall under a frame (0.03 s of a 1.12 s
+            # loop on a clip that starts between frames) and the engine refused the export, «clip duration must be at
+            # least 0.04» (Valentin's neck film, 28 November 2026)
+            first, last = render.frame_index(start, fps), render.frame_index(start + duration, fps)
+            loop_frames = max(1, round(loop * fps))
+            while first < last:
+                frames = min(loop_frames, last - first)
+                clips.append(_as_graphic(clip, source, first / fps, frames / fps, f"-{part}"))
+                first += frames
                 part += 1
         layer["clips"] = clips
     order = sorted(range(len(layers)), key=lambda i: float(layers[i].get("z", layers[i].get("z_index", i))) if isinstance(layers[i], dict) else 0)

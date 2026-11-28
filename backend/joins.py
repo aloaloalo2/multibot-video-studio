@@ -288,6 +288,9 @@ def held_head(folder, source, seconds):
     return _padded(Path(folder), source, seconds, True)
 
 
+MIN_SCALE = .05   # the engine's least scale (render.scalar_expr)
+
+
 def lead(clip, seconds, folder=None):
     """The incoming clip starts `seconds` earlier with its picture unchanged from its own start on: keyframes and timed
     words move with it, a motion still running at its start runs on backwards (as an outgoing clip runs on, below),
@@ -307,7 +310,9 @@ def lead(clip, seconds, folder=None):
             after = known[1] if len(known) > 1 else head
             span = float(after['time']) - float(head['time'])
             value = float(head[prop]) - ((float(after[prop]) - float(head[prop])) / span * seconds if span > 1e-9 else 0)
-            first[prop] = max(0, min(1, value)) if prop == 'opacity' else value
+            # a scale run on backwards from an entrance that grows fast went negative (−1.96) and the export failed with
+            # «scale keyframe must be at least 0.05» at 40% (Antropov, 28 November 2026): it stops at the engine's least
+            first[prop] = max(0, min(1, value)) if prop == 'opacity' else max(MIN_SCALE, value) if prop == 'scale' else value
         clip['keyframes'] = [first, *moved]
     for word in clip.get('text_words') or []:
         for key in ('start', 'end'):

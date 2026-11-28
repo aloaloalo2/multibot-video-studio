@@ -42,3 +42,17 @@ class FrameEndRulesTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LeadScaleTest(unittest.TestCase):
+    """28 November 2026: an accent growing from 0.46 led in 0.6 s early ran its scale back to −1.96 and the export
+    failed with «scale keyframe must be at least 0.05»."""
+
+    def test_a_scale_run_back_stops_at_the_least_the_engine_takes(self):
+        import joins
+        clip = {"start": 698.36, "duration": 13.46, "scale": 1, "keyframes": [
+            {"time": 0, "scale": .4635, "opacity": 0}, {"time": .04, "scale": .6249, "opacity": .32}]}
+        joins.lead(clip, .6)
+        self.assertEqual(clip["keyframes"][0]["scale"], joins.MIN_SCALE)
+        self.assertEqual(clip["keyframes"][0]["opacity"], 0)
+        self.assertAlmostEqual(clip["start"], 697.76)

@@ -135,3 +135,22 @@ class RecentRendersStayTest(unittest.TestCase):
             self.assertFalse(old.exists())
             self.assertTrue(fresh.exists())
             self.assertTrue(keep.exists())
+
+
+class OverlayPiecesTest(unittest.TestCase):
+    """28 November 2026: an e01 effect on 321.52–333.87 s left a last loop piece of 0.03 s and the export failed with
+    «clip duration must be at least 0.04»."""
+
+    def test_pieces_are_whole_frames(self):
+        from unittest import mock
+        import render
+        name = next(n for n, e in capcut_fx.EFFECTS.items() if e["mode"] != "content")
+        project = {"timeline_layers": [{"clips": [{"id": "fx", "content_type": "capcut_effect", "capcut_effect": name,
+                                                   "start": 321.52, "duration": 12.35}]}]}
+        with mock.patch.object(capcut_fx, "_overlay_loop", return_value=("loop.webm", 1.12)):
+            capcut_fx.expand(project, Path("p.json"), 1280, 720, 25, render)
+        pieces = project["timeline_layers"][0]["clips"]
+        self.assertTrue(all(round(c["duration"] * 25, 6) >= 1 for c in pieces))
+        self.assertAlmostEqual(pieces[0]["start"], 321.52)
+        self.assertAlmostEqual(pieces[-1]["start"] + pieces[-1]["duration"], 333.88)   # the clip's last frame
+        self.assertTrue(all(abs(a["start"] + a["duration"] - b["start"]) < 1e-9 for a, b in zip(pieces, pieces[1:])))
