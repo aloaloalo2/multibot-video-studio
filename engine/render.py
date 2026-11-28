@@ -428,7 +428,9 @@ def scalar_expr(points: list[dict], prop: str, default: float, low: float, high:
             raise ValueError("keyframes must contain objects")
         if prop in point:
             when = number(point.get("time"), f"{prop} keyframe time")
-            value = number(point[prop], f"{prop} keyframe", low)
+            # a scale run on backwards under a transition (joins.lead) may fall under the least: it stops there, the
+            # clip is invisible at that moment anyway (Antropov, 28 November 2026: «scale keyframe must be at least 0.05»)
+            value = max(low, number(point[prop], f"{prop} keyframe", -1e6)) if prop == "scale" else number(point[prop], f"{prop} keyframe", low)
             if value > high:
                 raise ValueError(f"{prop} keyframe exceeds {high}")
             pairs.append((when, value))

@@ -154,3 +154,10 @@ class OverlayPiecesTest(unittest.TestCase):
         self.assertAlmostEqual(pieces[0]["start"], 321.52)
         self.assertAlmostEqual(pieces[-1]["start"] + pieces[-1]["duration"], 333.88)   # the clip's last frame
         self.assertTrue(all(abs(a["start"] + a["duration"] - b["start"]) < 1e-9 for a, b in zip(pieces, pieces[1:])))
+
+
+class LowScaleKeyframeTest(unittest.TestCase):
+    def test_a_scale_under_the_least_stops_there(self):
+        import render
+        expr = render.scalar_expr([{"time": 0, "scale": -1.96}, {"time": .6, "scale": .46}], "scale", 1, .05, 10, "t")
+        self.assertIn("0.05", expr)
