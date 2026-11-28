@@ -128,3 +128,25 @@ class OpenSessionTest(unittest.TestCase):
         published.cancel('a' * 24)
         self.assertTrue(published.enqueue('a' * 24)['open_session'])
         self.assertFalse(published.enqueue('b' * 24)['open_session'])   # two waiting: the one just opened takes both
+
+
+class BetweenEpisodesTest(OpenSessionTest):
+    """The publishing session has just run `done … && stop` and starts `wait` two seconds later: no second session opens
+    in that gap (28 November 2026), and one opens once the pause is over and nobody took the queue."""
+
+    def test_no_new_session_right_after_a_publication(self):
+        import json, os, time
+        done = store.PROJECTS_ROOT / ('b' * 24) / 'published.json'
+        done.write_text(json.dumps({'at': time.time(), 'source': 'youtube_publish'}))
+        self.assertFalse(published.enqueue('a' * 24)['open_session'])
+        rows = published.queue(); rows[0]['at'] = time.time() - 600
+        store.atomic_json(published.queue_path(), rows)
+        self.assertFalse(published.ensure_session())
+        old = time.time() - published.BETWEEN_SECONDS - 5
+        os.utime(done, (old, old))
+        self.assertTrue(published.ensure_session())
+
+    def test_a_blue_tag_mark_is_not_a_session(self):
+        import json, time
+        (store.PROJECTS_ROOT / ('b' * 24) / 'published.json').write_text(json.dumps({'at': time.time(), 'source': 'finder-blue-tag'}))
+        self.assertTrue(published.enqueue('a' * 24)['open_session'])

@@ -154,6 +154,24 @@ def waiting_script(pid: int) -> bool:
     return True
 
 
+BETWEEN_SECONDS = 120   # a session that has just published an episode takes the next one within seconds
+
+
+def just_published() -> bool:
+    """A publishing session marked an episode done in the last BETWEEN_SECONDS: between `done … && stop` and its next
+    `wait` there is no listener and nothing in progress for about two seconds, and the studio used to open a second
+    session in that gap (user, 28 November 2026: «відкрила мені нову сесію… якщо у мене є сесія, яка прийняла цей
+    ролик на публікацію»). If that session never waits again, ensure_session opens one after this pause."""
+    now = time.time()
+    for mark in store.PROJECTS_ROOT.glob('*/published.json'):
+        try:
+            if now - mark.stat().st_mtime < BETWEEN_SECONDS and (store.read_json(mark, {}) or {}).get('source') == 'youtube_publish':
+                return True
+        except OSError:
+            continue
+    return False
+
+
 def in_progress() -> bool:
     """A publishing session is uploading an episode right now (tools/youtube_publish.py prepare, no «done» yet)."""
     for marker in store.PROJECTS_ROOT.glob('*/publishing.json'):
@@ -202,7 +220,7 @@ def enqueue(pid: str) -> dict:
     # One publishing session at a time: a new one is opened only when none waits, none is publishing and none was opened
     # in the last minutes. Three episodes sent at once wait in the queue for that one session, which publishes them in
     # turn (they would otherwise fight over the file server's port).
-    working = listener() or in_progress()
+    working = listener() or in_progress() or just_published()
     starting = store.DATA_ROOT / 'youtube-session-opened.json'
     # a session opened in the last minutes is still starting only while other episodes wait for it: with this one alone
     # in the queue nothing is waiting for that session (it was cancelled or its episode deleted), so a new one opens
@@ -289,7 +307,7 @@ def ensure_session() -> bool:
     the studio opens one new publishing session itself (user, 19 November 2026: «у черзі на публікацію висить… і нічого
     не відбувається»). Called with the studio's status, so within seconds; at most one session per STARTING_MINUTES."""
     rows = queue()
-    if not rows or time.time() - float(rows[0].get('at') or 0) < STALL_SECONDS or listener() or in_progress():
+    if not rows or time.time() - float(rows[0].get('at') or 0) < STALL_SECONDS or listener() or in_progress() or just_published():
         return False
     starting = store.DATA_ROOT / 'youtube-session-opened.json'
     if time.time() - float((store.read_json(starting, {}) or {}).get('at') or 0) < STARTING_MINUTES * 60:
