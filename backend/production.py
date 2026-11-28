@@ -1298,7 +1298,10 @@ def settle_review_failure(pid: str, project: dict, request: dict) -> dict:
         return set_request(pid, review_settle_tried=True, quality=review)
     saved = set_request(pid, status='done', error=None, quality=review, paused=False)
     if not request.get('repair_frames'):
+        # what the end of a run lays: a restart cut the Karl film before its music (user, 28 November 2026: «музика не
+        # додалась і пише кадри готові»)
         razgon_sound.start(pid, "production")
+        ensure_music(pid)
         film_sounds(pid)
     return saved
 

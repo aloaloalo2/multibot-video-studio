@@ -274,9 +274,11 @@ class BugsToFixTest(unittest.TestCase):
         with patch.object(production, "drawn", return_value=True), \
              patch.object(production.production_quality, "check", return_value={"passed": True, "errors": []}), \
              patch.object(production, "set_request", side_effect=lambda pid, **f: saved.update(f) or f), \
-             patch.object(production.razgon_sound, "start"), patch.object(production, "film_sounds"):
+             patch.object(production.razgon_sound, "start"), patch.object(production, "film_sounds"), \
+             patch.object(production, "ensure_music") as music:
             production.settle_review_failure("p", {}, cut)
         self.assertEqual((saved["status"], saved["paused"], saved["error"]), ("done", False, None))
+        music.assert_called_once_with("p")   # the music the cut run never laid
 
     def test_a_full_disk_reads_as_a_full_disk(self):
         self.assertIn("закінчилось місце", production.DISK_FULL)
