@@ -251,5 +251,18 @@ class BugsToFixTest(unittest.TestCase):
         self.assertTrue(done["passed"])
         self.assertEqual(done["look_later"], [1, 5, 46, 47, 49])
 
+    def test_a_label_a_little_off_screen_is_a_bug_to_fix_not_a_failed_film(self):
+        """28 November 2026: «Кадри 1–82 не вдалися. Кадр 63: текст виходить за екран на 0.36 с»."""
+        errors = ["Кадр 63: текст виходить за екран на 0.36 с. Зменште або перемістіть його блок.",
+                  "Кадр 68: слово не вміщується в текстовий блок. Збільште ширину або змініть текст.",
+                  "Потрібен огляд готової композиції кадрів Studio: 61, 63"]
+        with patch.object(production.production_quality, "bugs", return_value={68: "стрілка"}):
+            done = production.bugs_to_fix({}, {"frames": 82}, {"passed": False, "errors": errors})
+        self.assertTrue(done["passed"])
+        self.assertIn("текст виходить за екран", done["fix_later"]["63"])
+        self.assertTrue(done["fix_later"]["68"].startswith("стрілка; слово не вміщується"))
+        self.assertEqual(done["look_later"], [61, 63])
+        self.assertTrue(production.review_only_failure({"status": "failed", "quality": {"errors": errors}}))
+
     def test_a_full_disk_reads_as_a_full_disk(self):
         self.assertIn("закінчилось місце", production.DISK_FULL)

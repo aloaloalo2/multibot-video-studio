@@ -1194,6 +1194,14 @@ START_GRACE = 30
 
 
 REVIEW_ONLY = ('Перевірка кадрів Razgon не підтверджена:', 'Потрібен огляд готової композиції кадрів Studio:')
+# a drawn animation frame whose label the preflight finds a little off (native_animation.validate_label) is a bug to
+# fix, not a failed film (user, 28 November 2026: «Кадри 1–82 не вдалися. Кадр 63: текст виходить за екран на 0.36 с»)
+LABEL_BUG = re.compile(r'Кадр (\d+): (текст виходить за екран|слово не вміщується|текст не вміщується по висоті)')
+
+
+def look_error(error) -> bool:
+    """An error about how drawn frames look, not about frames missing: the film is done with it noted."""
+    return str(error).startswith(REVIEW_ONLY) or bool(LABEL_BUG.match(str(error)))
 
 
 def bugs_to_fix(project: dict, request: dict, review: dict) -> dict | None:
@@ -1203,10 +1211,15 @@ def bugs_to_fix(project: dict, request: dict, review: dict) -> dict | None:
     the user: «всі кадри мають вдаватися… не може видавати проект, де кадри не вдались»). Bugs the look saw stay in
     `fix_later`, frames still waiting for a look in `look_later`, both for the record; the author is not asked to look.
     The caller checks the frames are drawn. None for any other failure."""
-    if review.get('passed') or not review.get('errors') or not all(str(error).startswith(REVIEW_ONLY) for error in review['errors']):
+    if review.get('passed') or not review.get('errors') or not all(look_error(error) for error in review['errors']):
         return None
     frames = request.get('review_frames') or request.get('repair_frames') or list(range(1, int(request.get('frames') or 0) + 1))
     found = production_quality.bugs(project, frames)
+    for error in review['errors']:
+        label = LABEL_BUG.match(str(error))
+        if label:
+            number = int(label.group(1))
+            found[number] = '; '.join(filter(None, [found.get(number), str(error).split(': ', 1)[1]]))
     waiting = sorted({int(n) for error in review['errors'] for line in str(error).splitlines()
                       if line.strip().startswith(('not reviewed:', 'changed frames needing fresh stills:', 'missing cached stills:'))
                       or line.startswith(REVIEW_ONLY[1]) for n in re.findall(r'\d+', line.split(':', 1)[1])})
@@ -1255,7 +1268,7 @@ def review_only_failure(request: dict) -> bool:
     errors = (request.get('quality') or {}).get('errors') if isinstance(request.get('quality'), dict) else None
     return (request.get('status') == 'failed' and not request.get('paused') and not request.get('limit')
             and not request.get('review_settle_tried')
-            and bool(errors) and all(str(error).startswith(REVIEW_ONLY) for error in errors))
+            and bool(errors) and all(look_error(error) for error in errors))
 
 
 def settle_review_failure(pid: str, project: dict, request: dict) -> dict:
