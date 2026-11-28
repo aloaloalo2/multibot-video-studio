@@ -262,6 +262,8 @@ def studio_status(active_exports: list[dict], project_jobs, candidates=None) -> 
                 exporting.add(store.listed_project(store.project_dir(job["project_id"]) / "project.json").get("channel_id"))
             except (OSError, ValueError, store.StudioError):
                 pass
+    import auto_pipeline   # an episode the channel's «Автоекспорт» is about to export spins its channel as exporting
+    exporting |= {cid for pid, cid in auto_pipeline.PENDING.copy().items() if cid and pid not in {j.get("project_id") for j in active_exports}}
     active_channels |= exporting
     for pid in sorted(candidates) if candidates is not None else [item["id"] for item in store.list_projects()]:
         try:

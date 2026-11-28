@@ -22,6 +22,10 @@ STATE = "auto-pipeline.json"
 # a finished frame run or export wakes the loop at once (user, 21 November 2026: «кадри, галочка висить там 10 секунд, і
 # тоді починається експорт»; «висить кнопка опублікувати… а потім… запускається»): the next step starts within a second
 WAKE = threading.Event()
+# episodes the loop is about to export, {project id: channel id}: the card reads «Експорт починається» while the episode
+# waits for its music or frames to settle, and the channel showed no spinner meanwhile (user, 28 November 2026: «Експорт
+# починається, а спінера немає біля Григорія Антропова»); agent_view.studio_status counts them as exporting
+PENDING: dict = {}
 
 
 def kick() -> None:
@@ -118,8 +122,12 @@ def tick(start_export, active_export) -> list[str]:
         folder = store.project_dir(pid)
         exported = float(((store.read_json(completion_notices.path(pid), {}) or {}).get("export") or {}).get("at") or 0)
         # each step on its own, as before: a new frame run may export while the previous export goes to YouTube
-        if (due(item, settings, exported, {"auto_export": since["auto_export"]}) == "export"
-                and not _busy(pid, active_export)):
+        export_due = due(item, settings, exported, {"auto_export": since["auto_export"]}) == "export"
+        if export_due and not active_export(pid):
+            PENDING[pid] = item["channel_id"]
+        else:
+            PENDING.pop(pid, None)
+        if export_due and not _busy(pid, active_export):
             try:
                 project = store.load_project(pid)
             except store.StudioError:
@@ -132,7 +140,9 @@ def tick(start_export, active_export) -> list[str]:
                 try:
                     start_export(project, True, choices[store.VIDEO_QUALITIES.index(quality)])
                     done.append(f"export {pid}")
+                    PENDING.pop(pid, None)   # the export job itself turns the spinner from now on
                 except store.StudioError as error:
+                    PENDING.pop(pid, None)
                     store.atomic_json(folder / "auto-export.json", {"request": request.get("id"), "at": time.time(), "error": str(error)})
         if (due(item, settings, exported, {"auto_publish": since["auto_publish"]}) == "publish"
                 and not active_export(pid)):

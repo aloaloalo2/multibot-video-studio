@@ -68,5 +68,40 @@ class TickTest(unittest.TestCase):
         self.assertEqual(started, ["a"])
 
 
+class PendingSpinnerTest(unittest.TestCase):
+    """28 November 2026: the card read «Експорт починається» while the episode waited for its music, and its channel had
+    no spinner. An episode due for the channel's auto export counts as exporting until its export job starts."""
+
+    def test_waiting_episode_spins_its_channel_until_the_export_starts(self):
+        import json
+        import agent_view
+        root = Path(tempfile.mkdtemp())
+        (root / "projects" / "a").mkdir(parents=True)
+        (root / "projects" / "a" / "project.json").write_text(json.dumps(
+            {"id": "a", "channel_id": "c", "name": "a", "production_request": {"id": "ra", "status": "done", "finished_at": 200.0}}))
+        busy = [True]
+        auto_pipeline.PENDING.clear()
+        self.addCleanup(auto_pipeline.PENDING.clear)
+        with patch.object(store, "DATA_ROOT", root), patch.object(store, "PROJECTS_ROOT", root / "projects"), \
+             patch.object(store, "project_dir", side_effect=lambda pid: root / "projects" / pid), \
+             patch.object(store, "list_channels", return_value=[{"id": "c"}]), \
+             patch.object(store, "get_channel_folder", return_value=root), \
+             patch.object(store, "read_channel_settings", return_value={"auto_export": True}), \
+             patch.object(store, "upgrade_legacy_project", side_effect=lambda data: data), \
+             patch.object(store, "load_project", side_effect=lambda pid: {"id": pid, "production_request": {"id": "r" + pid}}), \
+             patch.object(store, "plan_readiness", return_value={"export_ready": True}), \
+             patch.object(auto_pipeline, "_busy", side_effect=lambda pid, active: busy[0]), \
+             patch.object(published, "active_channels", return_value=set()), \
+             patch.object(auto_pipeline.time, "time", return_value=100.0):
+            store.atomic_json(root / auto_pipeline.STATE, {"c": {"auto_export": 100.0}})
+            auto_pipeline.tick(lambda *a: None, lambda pid: None)
+            self.assertEqual(auto_pipeline.PENDING, {"a": "c"})
+            status = agent_view.studio_status([], lambda pid: {}, candidates=[])
+            self.assertEqual((status["exporting_channels"], status["active_channels"]), (["c"], ["c"]))
+            busy[0] = False
+            auto_pipeline.tick(lambda *a: None, lambda pid: None)
+            self.assertEqual(auto_pipeline.PENDING, {})
+
+
 if __name__ == '__main__':
     unittest.main()
