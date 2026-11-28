@@ -2684,10 +2684,18 @@ def prune_razgon_renders(pid: str) -> dict:
         renders = [asset for asset in project.get("assets", []) if Path(asset.get("path", "")).parent.resolve() in media
                    and RAZGON_RENDER.fullmatch(Path(asset.get("path", "")).name)]
         # only a render that a newer render of the same frame replaced on the timeline goes; a frame the author deleted
-        # keeps its file and its undo steps, so «Скасувати» can bring it back
-        shown = {RAZGON_RENDER.fullmatch(Path(asset["path"]).name).group(1) for asset in renders if asset.get("id") in used}
+        # keeps its file and its undo steps, so «Скасувати» can bring it back. Only a render imported before the one the
+        # timeline shows was replaced: one imported after it is a new render on its way to the timeline (the bridge
+        # imports a bed, then lays it), and pruning it there failed the film's sound with «Матеріал не знайдено» and
+        # left the channel's pause sign (ÓRBITA X, 28 November 2026). The assets list keeps the import order.
+        order = {asset["id"]: index for index, asset in enumerate(project.get("assets", []))}
+        shown = {}
+        for asset in renders:
+            if asset.get("id") in used:
+                name = RAZGON_RENDER.fullmatch(Path(asset["path"]).name).group(1)
+                shown[name] = max(shown.get(name, -1), order[asset["id"]])
         old = [asset for asset in renders if asset.get("id") not in used
-               and RAZGON_RENDER.fullmatch(Path(asset["path"]).name).group(1) in shown]
+               and order[asset["id"]] < shown.get(RAZGON_RENDER.fullmatch(Path(asset["path"]).name).group(1), -1)]
         if not old:
             return {"removed": 0, "bytes": 0}
         migrate_history(pid)

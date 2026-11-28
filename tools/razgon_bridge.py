@@ -1107,10 +1107,10 @@ def bed_in_place(project: dict, duration: float, fps: int) -> dict | None:
     return clip if whole and float(clip.get("volume", 1)) == 1 and len(track.get("clips", [])) == 1 and under_plate else None
 
 
-def lay_bed(studio: "Studio", project: dict, asset_id: str, duration: float) -> dict:
-    """Put the bed on a layer of its own right under the channel plate and logo, then remove the clip it replaces (its
-    layer goes with it). An empty layer of this name left by an interrupted run is taken again."""
-    old = [clip for _, clip in all_clips(project) if clip.get("title") == BED_TITLE]
+def bed_layer(studio: "Studio", project: dict) -> tuple[dict, dict]:
+    """The empty layer the new bed goes on, right under the channel plate and logo; one left by an interrupted run is
+    taken again. Made before the new bed is imported: an edit between the import and the clip let the Studio prune the
+    new bed as a replaced render («Матеріал не знайдено», ÓRBITA X, 28 November 2026)."""
     layer = next((track for track in project["tracks"] if track.get("name") == BED_TITLE and not track.get("clips")), None)
     if layer is None:
         top = len(project["tracks"])
@@ -1118,6 +1118,13 @@ def lay_bed(studio: "Studio", project: dict, asset_id: str, duration: float) -> 
             top -= 1
         project = studio.batch(project, [{"type": "add_layer", "payload": {"name": BED_TITLE, "to_index": top}}])
         layer = [track for track in project["tracks"] if track.get("name") == BED_TITLE and not track.get("clips")][-1]
+    return project, layer
+
+
+def lay_bed(studio: "Studio", project: dict, asset_id: str, duration: float) -> dict:
+    """Put the bed on its own layer and remove the clip it replaces (its layer goes with it), in one edit."""
+    old = [clip for _, clip in all_clips(project) if clip.get("title") == BED_TITLE]
+    project, layer = bed_layer(studio, project)
     actions = [{"type": "add_clip", "payload": {"layer_id": layer["id"], "kind": "audio", "asset_id": asset_id, "start": 0,
                                                 "duration": duration, "title": BED_TITLE, "volume": 1}}]
     return studio.batch(project, actions + [{"type": "delete_clip", "payload": {"clip_id": clip["id"]}} for clip in old])
@@ -1167,10 +1174,14 @@ def sound(args) -> None:
         write_json(receipt, {"digest": inputs, "asset_id": asset["id"]})
         print("Музика й ефекти не змінилися: доріжка на таймлайні та сама")
         return
-    asset = studio.import_file(pid, bed)
+    asset = None
     for attempt in range(3):
         try:
-            # importing bumps the revision, and an author may edit meanwhile: each try starts from the project as it is
+            # an author may edit meanwhile, and importing bumps the revision: each try starts from the project as it is.
+            # The layer comes first, the import after it (bed_layer)
+            if asset is None:
+                bed_layer(studio, project if attempt == 0 else studio.project(pid))
+                asset = studio.import_file(pid, bed)
             project = lay_bed(studio, studio.project(pid), asset["id"], duration)
             break
         except BridgeError as error:

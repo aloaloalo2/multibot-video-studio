@@ -465,6 +465,27 @@ class BackendTest(unittest.TestCase):
         store.apply_action(pid, "undo", {})
         self.assertIn(second["id"], {c.get("asset_id") for t in store.load_project(pid)["tracks"] for c in t["clips"]})
 
+    @unittest.skipUnless(shutil.which("ffmpeg"), "FFmpeg is needed for audio fixtures")
+    def test_a_new_bed_imported_but_not_laid_yet_is_kept(self):
+        """28 November 2026: the bridge imports the new bed, adds its layer, then lays it; the prune after the layer
+        took the new bed for a replaced one and the sound failed with «Матеріал не знайдено»."""
+        project = store.create_project(store.channel_id(self.channel), "Razgon bed")
+        pid = project["id"]
+        build = Path(self.tmp.name) / "bed-build"; build.mkdir(exist_ok=True)
+        bed = build / "music_sfx.m4a"
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "1", "-c:a", "aac", str(bed)], check=True)
+        first = store.import_asset_file(project, bed)
+        store.apply_action(pid, "add_clip", {"layer_id": "layer-1", "kind": "audio", "asset_id": first["id"], "start": 0, "duration": 1})
+        second = store.import_asset_file(store.load_project(pid), bed)
+        self.assertEqual(store.prune_razgon_renders(pid)["removed"], 0)
+        self.assertTrue(Path(second["path"]).exists())
+        old = next(c["id"] for t in store.load_project(pid)["tracks"] for c in t["clips"])
+        store.apply_action(pid, "add_clip", {"layer_id": "layer-1", "kind": "audio", "asset_id": second["id"], "start": 0, "duration": 1})
+        store.apply_action(pid, "delete_clip", {"clip_id": old})
+        self.assertEqual(store.prune_razgon_renders(pid)["removed"], 1)   # now the earlier bed was replaced
+        self.assertFalse(Path(first["path"]).exists())
+        self.assertTrue(Path(second["path"]).exists())
+
     def test_undo_keeps_media_imported_after_the_step(self):
         project = store.create_project(store.channel_id(self.channel), "Undo keeps library")
         pid = project["id"]
