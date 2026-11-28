@@ -740,11 +740,18 @@ function exportStopControl(jobId,onDone){
   return button;
 }
 // the card's «Експортувати»: the export with the channel's quality, its progress on the card as any export's
+// The card turns to «Готуємо експорт» on the click itself, before the server answers (user, 28 November 2026: «кнопку
+// експорт коли нажимаю нехай одразу викликається на клик»); a refusal puts the button back with its reason.
 async function startCardExport(project){
   if(!project)return;
-  try{const result=await api(`/api/projects/${encodeURIComponent(project.id)}/export`,'POST',{confirm_export:true,channel_quality:true});
-    if(result.job)state.projectExports.set(project.id,result.job);updateOverviewExports();pollOverviewExports(true);}
-  catch(error){status(error.message,true);}
+  const id=project.id;
+  if(state.projectExports.has(id))return;   // a second click while it starts
+  const placeholder={id:'pending-'+id,project_id:id,status:'queued',stage:'preparing',progress:0,pending:true};
+  state.projectExports.set(id,placeholder);updateOverviewExports();
+  try{const result=await api(`/api/projects/${encodeURIComponent(id)}/export`,'POST',{confirm_export:true,channel_quality:true});
+    if(result.job)state.projectExports.set(id,result.job);else state.projectExports.delete(id);
+    updateOverviewExports();pollOverviewExports(true);}
+  catch(error){if(state.projectExports.get(id)===placeholder)state.projectExports.delete(id);updateOverviewExports();status(error.message,true);}
 }
 // a job whose motion-code clips are rendered before it joins the queue (app._prepare_then_export)
 function exportQueueLabel(job){if(job?.stage==='preparing'&&!job.queue_position)return 'Готуємо експорт';return `Експорт у черзі${Number(job?.queue_position)>0?` · №${Number(job.queue_position)}`:''}`;}
@@ -758,7 +765,7 @@ function updateOverviewExports(){
     if(typeof updateProjectDeleteButton==='function')updateProjectDeleteButton(card);
     const box=card.querySelector('.project-export-state');box.hidden=!active;
     let stop=card.querySelector('.project-export-stop');
-    if(!active||job.status==='cancelling'){stop?.remove();}
+    if(!active||job.status==='cancelling'||job.pending){stop?.remove();}
     else if(!stop||stop.dataset.job!==job.id){stop?.remove();stop=exportStopControl(job.id,updated=>{if(updated)state.projectExports.set(updated.project_id,updated);updateOverviewExports();pollOverviewExports(true);});stop.classList.add('project-export-stop');stop.dataset.job=job.id;card.append(stop);}
     if(!active){if(box._exportMarkup){box.replaceChildren();delete box._exportMarkup;}continue;}
     const progress=Math.max(0,Math.min(100,Math.round(job.progress||0)));
@@ -784,8 +791,9 @@ async function pollOverviewExports(force=false){
       }
     }
     if(state.channel?.id!==channelId)return;
-    const finished=ids.some(id=>state.projectExports.has(id)&&!jobs.some(job=>job.project_id===id));
-    for(const id of ids)state.projectExports.delete(id);
+    // a click's own placeholder stays until its request answers (startCardExport)
+    const finished=ids.some(id=>state.projectExports.has(id)&&!state.projectExports.get(id).pending&&!jobs.some(job=>job.project_id===id));
+    for(const id of ids)if(!state.projectExports.get(id)?.pending)state.projectExports.delete(id);
     for(const job of jobs)state.projectExports.set(job.project_id,job);
     updateOverviewExports();
     if(finished)await refreshProjects();
